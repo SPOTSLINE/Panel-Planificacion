@@ -94,6 +94,22 @@ tbody tr.abierta{background:var(--bg3)}
 .solo-cel{display:none}
 @media(max-width:720px){.solo-cel{display:inline}table{font-size:12px}th{font-size:10px;letter-spacing:.2px}.tag{font-size:10px;padding:2px 6px}.falta{font-size:13px}.header{padding:0 14px}.main{padding:14px 12px 80px}.kpi .v{font-size:20px}th,td{padding:8px 5px}td:first-child,th:first-child{padding-left:9px}.prev-in{width:76px}.ocultar-cel{display:none}}
 </style>
+<style>
+.dif-neg{color:var(--red);font-weight:800;font-size:14px}
+.dif-pos{color:var(--green);font-weight:700}
+.sub{display:block;font-size:11px;font-weight:600;margin-top:2px}
+.sub.rojo{color:var(--red)}
+.param{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:14px}
+.param label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
+.param .inp{width:110px;text-align:right}
+.pct-in{width:70px;text-align:right;background:var(--bg);border:1px solid var(--border2);color:var(--text);border-radius:6px;padding:5px 7px;font:inherit;font-size:13px}
+.pct-in.ajustada,.prev-in.ajustada{border-color:var(--yellow);color:var(--yellow2)}
+tr.cat-fila{background:var(--bg3);cursor:pointer}
+tr.cat-fila td{font-weight:700;border-bottom:1px solid var(--border2)}
+tr.cat-fila:hover{background:var(--bg4)}
+.flechita{display:inline-block;width:14px;color:var(--text3)}
+tr.prod-fila td:first-child{padding-left:28px}
+</style>
 </head>
 <body>
 <div class="header">
@@ -101,7 +117,7 @@ tbody tr.abierta{background:var(--bg3)}
     <div><h1>Planificación de Ventas</h1><small id="actualizado">Cargando…</small></div></div>
   <div class="header-actions">
     <div class="seg" id="seg-empresa"></div>
-    <button class="btn" id="btn-excel"><i class="ti ti-file-spreadsheet"></i>Informe de insumos</button>
+    <button class="btn" id="btn-excel"><i class="ti ti-file-spreadsheet"></i>Informe Excel</button>
   </div>
 </div>
 
@@ -109,16 +125,17 @@ tbody tr.abierta{background:var(--bg3)}
   <div id="avisos"></div>
   <div class="bar">
     <div class="seg" id="seg-vista">
-      <button data-v="materiales" class="on"><i class="ti ti-package"></i> Materiales a pedir</button>
-      <button data-v="prevision"><i class="ti ti-chart-arrows"></i> Previsión por producto</button>
+      <button data-v="plan" class="on"><i class="ti ti-adjustments"></i> Planif. venta</button>
+      <button data-v="insumos"><i class="ti ti-shopping-cart"></i> Insumos</button>
+      <button data-v="fabricar"><i class="ti ti-building-factory-2"></i> A fabricar</button>
     </div>
   </div>
+  <div id="params"></div>
   <div class="kpis" id="kpis"></div>
   <div class="bar" id="filtros">
     <input class="inp buscar" id="buscar" placeholder="Buscar código o descripción…">
-    <select class="inp" id="f-accion"><option value="">Comprar y fabricar</option><option value="comprar">Solo comprar</option><option value="fabricar">Solo fabricar</option></select>
     <select class="inp" id="f-cat"><option value="">Todas las categorías</option></select>
-    <label class="chk" id="lbl-falta"><input type="checkbox" id="f-falta" checked> Solo lo que falta</label>
+    <label class="chk" id="lbl-falta"><input type="checkbox" id="f-falta" checked> Solo con diferencia negativa</label>
   </div>
   <div class="card"><div class="tabla-wrap" id="tabla"><div class="cargando">Cargando datos…</div></div></div>
   <p class="ayuda" style="margin-top:12px" id="pie"></p>
@@ -130,19 +147,23 @@ tbody tr.abierta{background:var(--bg3)}
 /* ════════════════════════════════════════════════════════════════
    PLANIFICACIÓN DE VENTAS
    Datos: planificacion/planificacion.json.gz (bucket "datos"), lo genera
-   odoo_planificacion.py en panel-ventas-extract. Ajustes: tablas plan_prevision
-   y plan_minimos (5_planificacion.sql). Las cuentas se hacen acá, así cada
-   ajuste del admin se ve al instante.
+   odoo_planificacion.py en panel-ventas-extract. Ajustes en Supabase:
+     plan_parametros  → meses a cubrir, % general y % por categoría (6_planificacion_parametros.sql)
+     plan_prevision   → Planif. venta a mano por producto (cantidad para el período)
+     plan_minimos     → stock mínimo de seguridad
+   Las cuentas se hacen acá, así cada ajuste se ve al instante.
 
    Por producto vendido:
-     previsión 60 días = venta confirmada 365 días / 12 × 2   (o la que cargó el admin)
-     pronóstico        = previsión − pendiente (mínimo 0)
-   Por cada artículo (producto, semielaborado o insumo), de arriba hacia abajo del árbol:
-     stock   = físico + compras en camino + en fabricación − reservado para OF abiertas − mínimo
-     falta   = pendiente + pronosticado − stock (mínimo 0). Se usa el stock primero para el pendiente.
-     Si se fabrica, lo que falta se abre con su lista de materiales y pasa a los componentes
-     (lo que falta por el pendiente va a "Pendiente" y lo del pronóstico a "Pronosticado").
-     Los kits / packs no se muestran: se abren directo en sus componentes.
+     promedio mensual = venta confirmada 365 días ÷ 12
+     Planif. venta    = promedio × meses a cubrir × (1 + % categoría, o % general)  — o la cargada a mano
+     (es venta NUEVA: el pendiente va aparte)
+   Por cada artículo, de arriba hacia abajo del árbol:
+     Stock      = físico + compras en camino + en fabricación − reservado para OF abiertas − mínimo
+     Diferencia = Stock − Pendiente − Planif. venta     (negativa = hay que comprar o fabricar)
+     El stock se usa primero para el pendiente. Si se fabrica, lo que falta se abre con su lista de
+     materiales: lo que falta por el pendiente va al Pendiente del componente y lo de la
+     planificación a su Planif. venta. Los kits / packs se abren directo en sus componentes.
+     Si tiene lista de materiales "Fabricar este producto", se fabrica aunque la ruta diga Comprar.
    ════════════════════════════════════════════════════════════════ */
 const SB_URL = 'https://fzylibnqqjznaddgpsjt.supabase.co';
 const SB_KEY = 'sb_publishable_zHONcBODl6nbPiLS3TSrZw_D8MVJqeE';
@@ -150,8 +171,9 @@ const ARCHIVO = 'planificacion/planificacion.json.gz';
 const DEMO = window.PLAN_DEMO || null;   // prueba local: datos y ajustes en memoria
 const sb = DEMO ? null : window.supabase.createClient(SB_URL, SB_KEY);
 
-const E = { datos:null, empresaId:null, vista:'materiales', esAdmin:false,
-            prev:{}, min:{}, abierto:null, orden:{materiales:['falta',-1], prevision:['pronostico',-1]}, calc:null };
+const E = { datos:null, empresaId:null, vista:'plan', esAdmin:false, prev:{}, min:{}, par:{}, parSinTabla:false,
+            abierto:null, catAbiertas:new Set(),
+            orden:{plan:['plan',-1], insumos:['dif',1], fabricar:['dif',1]}, calc:null };
 
 /* ───────── utilidades ───────── */
 const $ = s => document.querySelector(s);
@@ -160,13 +182,14 @@ const sinAc = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLower
 const clave = (emp, id) => emp + ':' + id;
 function num(n, unidad){
   if (n == null || isNaN(n)) return '—';
-  const entero = !unidad || /unid|u\.|^u$/i.test(unidad) || Math.abs(n) >= 100;
-  const v = (entero ? Math.ceil(n - 1e-9) : Math.round(n * 100) / 100) || 0;   // sin "-0"
+  const entero = !unidad || /unid|units?$|u\.|^u$/i.test(unidad) || Math.abs(n) >= 100;
+  const v = (entero ? Math.round(n) : Math.round(n * 100) / 100) || 0;   // sin "-0"
   return v.toLocaleString('es-AR', {maximumFractionDigits: entero ? 0 : 2});
 }
+const signo = (n, u) => (n > 0.5 ? '+' : '') + num(n, u);
 const redondear = n => Math.ceil(n - 1e-9) || 0;
 const nom = p => String(p.nombre||'').replace(/^\[[^\]]*\]\s*/, '');   // sin el [código] que agrega Odoo
-function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('on'),2200); }
+function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('on'),2400); }
 function fechaLarga(iso){ try{ return new Date(iso).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return iso; } }
 
 /* ───────── datos ───────── */
@@ -181,63 +204,70 @@ async function bajarArchivo(){
   return JSON.parse(txt);
 }
 async function leerAjustes(){
-  if (DEMO) { E.prev = Object.assign({}, DEMO.prev||{}); E.min = Object.assign({}, DEMO.min||{}); return; }
-  const [p, m] = await Promise.all([
-    sb.from('plan_prevision').select('empresa_id,producto_id,cantidad,nota,usuario,updated_at'),
-    sb.from('plan_minimos').select('empresa_id,producto_id,minimo,usuario,updated_at')
+  if (DEMO) { E.prev = Object.assign({}, DEMO.prev||{}); E.min = Object.assign({}, DEMO.min||{}); E.par = Object.assign({}, DEMO.par||{}); return; }
+  const [p, m, q] = await Promise.all([
+    sb.from('plan_prevision').select('empresa_id,producto_id,cantidad,usuario,updated_at'),
+    sb.from('plan_minimos').select('empresa_id,producto_id,minimo,usuario,updated_at'),
+    sb.from('plan_parametros').select('empresa_id,clave,valor,usuario,updated_at')
   ]);
   if (p.error) throw p.error; if (m.error) throw m.error;
   E.prev = {}; (p.data||[]).forEach(r => E.prev[clave(r.empresa_id, r.producto_id)] = r);
   E.min  = {}; (m.data||[]).forEach(r => E.min[clave(r.empresa_id, r.producto_id)] = r);
+  E.par  = {};
+  if (q.error) E.parSinTabla = true;   // falta correr 6_planificacion_parametros.sql
+  else (q.data||[]).forEach(r => E.par[clave(r.empresa_id, r.clave)] = r);
 }
 async function guardar(tabla, emp, id, valor){
-  const k = clave(emp, id), dic = tabla==='plan_prevision' ? E.prev : E.min, campo = tabla==='plan_prevision' ? 'cantidad' : 'minimo';
-  if (valor === null) {
-    if (!DEMO) { const {error} = await sb.from(tabla).delete().eq('empresa_id', emp).eq('producto_id', id); if (error) throw error; }
-    delete dic[k];
-  } else {
-    const fila = {empresa_id:emp, producto_id:id, [campo]:valor};
-    if (!DEMO) { const {error} = await sb.from(tabla).upsert(fila); if (error) throw error; }
-    dic[k] = Object.assign(fila, {usuario: DEMO ? 'Demo' : 'vos', updated_at: new Date().toISOString()});
+  const dic = {plan_prevision:E.prev, plan_minimos:E.min, plan_parametros:E.par}[tabla];
+  const campoId = tabla==='plan_parametros' ? 'clave' : 'producto_id';
+  const campo = {plan_prevision:'cantidad', plan_minimos:'minimo', plan_parametros:'valor'}[tabla];
+  const k = clave(emp, id);
+  if (!DEMO && !(tabla==='plan_parametros' && E.parSinTabla)) {
+    if (valor === null) { const {error} = await sb.from(tabla).delete().eq('empresa_id', emp).eq(campoId, id); if (error) throw error; }
+    else { const {error} = await sb.from(tabla).upsert({empresa_id:emp, [campoId]:id, [campo]:valor}); if (error) throw error; }
   }
+  if (valor === null) delete dic[k];
+  else dic[k] = {empresa_id:emp, [campoId]:id, [campo]:valor, usuario: DEMO ? 'Demo' : 'vos', updated_at: new Date().toISOString()};
 }
 
-/* Si un artículo tiene lista de materiales "Fabricar este producto" en Odoo, se fabrica,
-   aunque su ruta diga Comprar/Buy (hay rutas mal cargadas). Los kits se abren siempre. */
+/* Si tiene lista de materiales "Fabricar este producto", se fabrica aunque la ruta diga Comprar. */
 function normalizar(datos){
-  let n = 0;
   (datos.empresas||[]).forEach(e => e.productos.forEach(p => {
-    if (p.bom && p.bom.length && p.accion === 'comprar') { p.accion = 'fabricar'; p.ruta_contradice = true; n++; }
+    if (p.bom && p.bom.length && p.accion === 'comprar') { p.accion = 'fabricar'; p.ruta_contradice = true; }
   }));
-  return n;
 }
+
+/* ───────── parámetros ───────── */
+function parametro(emp, k, defecto){ const r = E.par[clave(emp.id, k)]; return r ? +r.valor : defecto; }
+const catDe = p => p.categoria || 'Sin categoría';
+function pctDe(emp, cat){ const r = E.par[clave(emp.id, 'cat:'+cat)]; return r ? {pct:+r.valor, propio:true} : {pct:parametro(emp,'pct',0), propio:false}; }
 
 /* ───────── cálculo ───────── */
 function calcular(emp){
   const items = new Map(emp.productos.map(p => [p.id, p]));
-  const prev = id => E.prev[clave(emp.id, id)];
+  const meses = parametro(emp, 'meses', 1);
   const minimo = id => { const r = E.min[clave(emp.id, id)]; return r ? +r.minimo : 0; };
-  const R = new Map();   // id -> resultado
+  const R = new Map();
   const res = id => { if (!R.has(id)) { const p = items.get(id) || {id, nombre:'Producto '+id, codigo:'', bom:[], accion:'comprar'};
-      R.set(id, {p, P:0, F:0, origen:[], stock:0, minimo:0, falta:0, faltaP:0, faltaF:0}); } return R.get(id); };
+      R.set(id, {p, P:0, F:0, origen:[], stock:0, minimo:0, falta:0, faltaP:0, faltaF:0, dif:0}); } return R.get(id); };
 
-  // 1) Demanda de lo vendido
+  // 1) Lo vendido: pendiente + planificación
   const productos = [];
   for (const p of emp.productos) {
-    const auto = redondear((p.venta_365||0) / 12 * 2);
-    const aj = prev(p.id);
+    const aj = E.prev[clave(emp.id, p.id)];
     if (!(p.venta_365 > 0 || p.pendiente > 0 || aj)) continue;
-    const prevision = aj ? +aj.cantidad : auto;
-    const pronostico = Math.max(0, prevision - (p.pendiente||0));
-    productos.push({p, auto, aj, prevision, pendiente:p.pendiente||0, pronostico});
+    const prom = (p.venta_365||0) / 12;
+    const {pct, propio} = pctDe(emp, catDe(p));
+    const auto = redondear(prom * meses * (1 + pct/100));
+    const plan = aj ? +aj.cantidad : auto;
+    productos.push({p, prom, pct, pctPropio:propio, auto, aj, plan, pendiente:p.pendiente||0});
     const r = res(p.id);
-    r.P += p.pendiente||0; r.F += pronostico;
-    r.origen.push({tipo:'venta', P:p.pendiente||0, F:pronostico});
+    r.P += p.pendiente||0; r.F += plan;
+    r.origen.push({tipo:'venta', P:p.pendiente||0, F:plan});
   }
-  // los que tienen mínimo cargado entran aunque no tengan demanda
   Object.keys(E.min).forEach(k => { const [e, id] = k.split(':').map(Number); if (e === emp.id && items.has(id)) res(id); });
 
-  // 2) Orden: cada artículo después de todos los que lo usan (se abre fabricar y kit)
+  // 2) Orden del árbol (cada artículo después de todos los que lo usan)
   const abre = p => p && p.bom && p.bom.length && (p.accion === 'fabricar' || p.accion === 'kit');
   const orden = [], estado = new Map(), ciclos = [];
   const visitar = id => {
@@ -255,13 +285,14 @@ function calcular(emp){
   for (const id of orden) {
     const r = R.get(id); if (!r) continue;
     const p = r.p;
-    if (p.accion === 'kit') {   // pasa todo a los componentes, sin stock propio
+    if (p.accion === 'kit') {
       (p.bom||[]).forEach(l => { const c = res(l.c); c.P += r.P*l.q; c.F += r.F*l.q; c.origen.push({tipo:'kit', de:id, P:r.P*l.q, F:r.F*l.q}); });
       continue;
     }
     r.minimo = minimo(id);
     r.stock = (p.fisico||0) + (p.oc||0) + (p.of_prod||0) - (p.of_consumo||0) - r.minimo;
-    r.falta  = Math.max(0, r.P + r.F - r.stock);
+    r.dif   = r.stock - r.P - r.F;
+    r.falta  = Math.max(0, -r.dif);
     r.faltaP = Math.min(r.falta, Math.max(0, r.P - r.stock));
     r.faltaF = r.falta - r.faltaP;
     if (abre(p) && r.falta > 1e-9) {
@@ -270,28 +301,30 @@ function calcular(emp){
   }
   const filas = [...R.values()].filter(r => r.p.accion !== 'kit');
   const filasPorId = new Map(filas.map(r => [r.p.id, r]));
-  return {productos, filas, filasPorId, ciclos, items};
+  return {productos, filas, filasPorId, ciclos, items, meses};
 }
 
 /* ───────── pantalla ───────── */
 function empresaActual(){ return E.datos.empresas.find(e => e.id === E.empresaId) || E.datos.empresas[0]; }
 function nombreCorto(n){ return /spl/i.test(n) ? 'SPL' : (/spotsline/i.test(n) ? 'Spotsline' : n); }
-
-function pintarEmpresas(){
-  $('#seg-empresa').innerHTML = E.datos.empresas.map(e => `<button data-e="${e.id}" class="${e.id===E.empresaId?'on':''}">${esc(nombreCorto(e.nombre))}</button>`).join('');
+function listaVista(){
+  if (E.vista === 'plan') return E.calc.productos.map(x => x.p);
+  return E.calc.filas.filter(r => (E.vista==='fabricar') === (r.p.accion==='fabricar')).map(r => r.p);
 }
-function pintarCategorias(){
-  const emp = empresaActual();
-  const cats = [...new Set((E.vista==='materiales' ? E.calc.filas.map(r=>r.p) : E.calc.productos.map(x=>x.p)).map(p=>p.categoria||'Sin categoría'))].sort();
+function pintarCabecera(){
+  $('#seg-empresa').innerHTML = E.datos.empresas.map(e => `<button data-e="${e.id}" class="${e.id===E.empresaId?'on':''}">${esc(nombreCorto(e.nombre))}</button>`).join('');
+  document.querySelectorAll('#seg-vista button').forEach(b => b.classList.toggle('on', b.dataset.v===E.vista));
+  const cats = [...new Set(listaVista().map(catDe))].sort();
   const sel = $('#f-cat'), val = sel.value;
   sel.innerHTML = '<option value="">Todas las categorías</option>' + cats.map(c=>`<option ${c===val?'selected':''}>${esc(c)}</option>`).join('');
+  if (val && !cats.includes(val)) sel.value = '';
+  $('#lbl-falta').style.display = E.vista==='plan' ? 'none' : '';
 }
 function filtrar(lista, getP){
-  const q = sinAc($('#buscar').value).trim(), ac = $('#f-accion').value, cat = $('#f-cat').value;
+  const q = sinAc($('#buscar').value).trim(), cat = $('#f-cat').value;
   return lista.filter(x => { const p = getP(x);
     if (q && !sinAc(p.codigo+' '+p.nombre).includes(q)) return false;
-    if (ac && p.accion !== ac) return false;
-    if (cat && (p.categoria||'Sin categoría') !== cat) return false;
+    if (cat && catDe(p) !== cat) return false;
     return true; });
 }
 function ordenar(lista, campo, dir, get){
@@ -307,43 +340,94 @@ function render(){
   if (!E.datos) return;
   const emp = empresaActual();
   E.calc = calcular(emp);
-  pintarEmpresas(); pintarCategorias();
-  $('#lbl-falta').style.display = E.vista==='materiales' ? '' : 'none';
-  $('#f-accion').style.display = E.vista==='materiales' ? '' : 'none';
-  if (E.vista === 'materiales') renderMateriales(); else renderPrevision();
+  pintarCabecera();
+  pintarParametros(emp);
+  if (E.vista === 'plan') renderPlan(emp); else renderMateriales();
+}
+
+function pintarParametros(emp){
+  if (E.vista !== 'plan') { $('#params').innerHTML = ''; return; }
+  const meses = parametro(emp,'meses',1), pct = parametro(emp,'pct',0), dis = E.esAdmin ? '' : 'disabled';
+  $('#params').innerHTML = `<div class="param">
+      <label>Meses a cubrir<input class="inp" type="number" min="0" step="0.5" data-par="meses" value="${meses}" ${dis}></label>
+      <label>% general<input class="inp" type="number" step="1" data-par="pct" value="${pct}" ${dis}></label>
+      <div class="ayuda" style="flex:1;min-width:220px">Planif. venta = promedio mensual de los últimos 12 meses × meses a cubrir × (1 + %).
+        El % de una categoría reemplaza al general. Para un producto puntual, escribí la cantidad a mano (vacío = automática).
+        ${E.esAdmin?'':'<br>Solo los administradores pueden cambiar estos valores.'}</div>
+    </div>`;
+}
+
+function renderPlan(emp){
+  const {productos, meses} = E.calc;
+  const lista = filtrar(productos, x => x.p);
+  const tot = f => lista.reduce((a,x)=>a+x[f],0);
+  $('#kpis').innerHTML = `
+    <div class="kpi" style="--k:var(--text3)"><div class="l">Promedio mensual</div><div class="v">${num(tot('prom'))}</div><div class="s">venta de los últimos 12 meses ÷ 12</div></div>
+    <div class="kpi" style="--k:var(--yellow)"><div class="l">Planif. venta</div><div class="v">${num(tot('plan'))}</div><div class="s">${meses===1?'1 mes':num(meses,'x')+' meses'} · ${productos.filter(x=>x.aj).length} a mano</div></div>
+    <div class="kpi" style="--k:var(--blue)"><div class="l">Pendiente</div><div class="v">${num(tot('pendiente'))}</div><div class="s">vendido sin entregar (va aparte)</div></div>
+    <div class="kpi" style="--k:var(--green)"><div class="l">Productos</div><div class="v">${lista.length}</div><div class="s">con venta o pendiente</div></div>`;
+  if (!lista.length) { $('#tabla').innerHTML = '<div class="vacio">Sin productos con estos filtros.</div>'; return; }
+  // agrupar por categoría
+  const grupos = new Map();
+  lista.forEach(x => { const c = catDe(x.p); if (!grupos.has(c)) grupos.set(c, []); grupos.get(c).push(x); });
+  const [oc, od] = E.orden.plan;
+  const val = (x, f) => f==='nombre' ? nom(x.p) : f==='codigo' ? x.p.codigo : f==='venta' ? (x.p.venta_365||0) : x[f];
+  const cats = [...grupos.entries()].map(([c, xs]) => ({c, xs, prom:xs.reduce((a,x)=>a+x.prom,0), plan:xs.reduce((a,x)=>a+x.plan,0), pend:xs.reduce((a,x)=>a+x.pendiente,0), pct:pctDe(emp,c)}));
+  cats.sort((a,b) => oc==='nombre'||oc==='codigo' ? a.c.localeCompare(b.c,'es')*od : ((oc==='pendiente'?a.pend-b.pend : oc==='prom'?a.prom-b.prom : a.plan-b.plan) * od));
+  const buscando = !!$('#buscar').value.trim() || !!$('#f-cat').value;
+  const dis = E.esAdmin ? '' : 'disabled';
+  $('#tabla').innerHTML = `<table><thead><tr>
+      ${th('nombre','Categoría / producto')}${th('venta','Venta 12 m','n ocultar-cel')}${th('prom','Prom. mes','n','Prom.')}
+      <th class="n">%</th>${th('plan','Planif. venta','n','Planif.')}<th class="n ocultar-cel">A mano</th>${th('pendiente','Pendiente','n','Pend.')}
+    </tr></thead><tbody>${cats.map(g => {
+      const abierta = buscando || E.catAbiertas.has(g.c);
+      const filas = abierta ? ordenar(g.xs.slice(), oc, od, val).map(x => {
+        const u = x.p.unidad;
+        return `<tr class="prod-fila"><td><div class="nom">${esc(nom(x.p))}</div><div class="cat">${esc(x.p.codigo)}${x.p.accion==='kit'?' · pack':''}</div></td>
+          <td class="n ocultar-cel">${num(x.p.venta_365||0,u)}</td><td class="n">${num(x.prom,u)}</td>
+          <td class="n muted">${x.aj?'—':(x.pct>0?'+':'')+num(x.pct,'x')+'%'}</td>
+          <td class="n"><b>${num(x.plan,u)}</b>${x.aj?'<span class="badge-aj" title="Cargada a mano">✎</span>':''}</td>
+          <td class="n ocultar-cel">${E.esAdmin?`<input class="prev-in ${x.aj?'ajustada':''}" type="number" min="0" step="any" data-prev="${x.p.id}" value="${x.aj?+x.aj.cantidad:''}" placeholder="${x.auto}" title="Vacío = automática (${x.auto})">`:(x.aj?num(x.plan,u):'')}</td>
+          <td class="n">${num(x.pendiente,u)}</td></tr>`; }).join('') : '';
+      return `<tr class="cat-fila" data-cat="${esc(g.c)}"><td><span class="flechita">${abierta?'▾':'▸'}</span>${esc(g.c)} <span class="muted" style="font-weight:400">· ${g.xs.length}</span></td>
+        <td class="n ocultar-cel"></td><td class="n">${num(g.prom)}</td>
+        <td class="n"><input class="pct-in ${g.pct.propio?'ajustada':''}" type="number" step="1" data-catpct="${esc(g.c)}" value="${g.pct.propio?g.pct.pct:''}" placeholder="${parametro(emp,'pct',0)}" title="Vacío = usa el % general" ${dis}></td>
+        <td class="n">${num(g.plan)}</td><td class="n ocultar-cel"></td><td class="n">${num(g.pend)}</td></tr>${filas}`;
+    }).join('')}</tbody></table>`;
 }
 
 function renderMateriales(){
   const {filas, ciclos} = E.calc;
-  const conFalta = filas.filter(r => r.falta > 1e-9);
-  const k = a => conFalta.filter(r => r.p.accion===a).length;
+  const fab = E.vista === 'fabricar';
+  const propias = filas.filter(r => fab === (r.p.accion==='fabricar'));
+  const neg = propias.filter(r => r.falta > 1e-9);
+  const faltanYa = propias.filter(r => r.faltaP > 1e-9);
   $('#kpis').innerHTML = `
-    <div class="kpi" style="--k:var(--blue)"><div class="l">Insumos a comprar</div><div class="v">${k('comprar')}</div><div class="s">con faltante</div></div>
-    <div class="kpi" style="--k:var(--violet)"><div class="l">A fabricar</div><div class="v">${k('fabricar')}</div><div class="s">productos y semielaborados</div></div>
-    <div class="kpi" style="--k:var(--yellow)"><div class="l">Artículos en el cálculo</div><div class="v">${filas.length}</div><div class="s">${filas.length-conFalta.length} cubiertos con stock</div></div>
-    <div class="kpi" style="--k:var(--green)"><div class="l">Horizonte</div><div class="v">${E.datos.dias_prevision||60} días</div><div class="s">venta prom. ${E.datos.meses_historia||12} meses</div></div>`;
-  let lista = filtrar(filas, r => r.p);
+    <div class="kpi" style="--k:var(--red)"><div class="l">Con diferencia negativa</div><div class="v">${neg.length}</div><div class="s">${fab?'productos a fabricar':'insumos a comprar'}</div></div>
+    <div class="kpi" style="--k:#e67e22"><div class="l">Faltan ya para lo pendiente</div><div class="v">${faltanYa.length}</div><div class="s">el stock no cubre lo vendido</div></div>
+    <div class="kpi" style="--k:var(--green)"><div class="l">Cubiertos</div><div class="v">${propias.length-neg.length}</div><div class="s">de ${propias.length} ${fab?'artículos':'insumos'} en el cálculo</div></div>
+    <div class="kpi" style="--k:var(--yellow)"><div class="l">Planificación</div><div class="v">${E.calc.meses===1?'1 mes':num(E.calc.meses,'x')+' meses'}</div><div class="s">% general ${num(parametro(empresaActual(),'pct',0),'x')}%</div></div>`;
+  let lista = filtrar(propias, r => r.p);
   if ($('#f-falta').checked) lista = lista.filter(r => r.falta > 1e-9);
-  const [c, d] = E.orden.materiales;
-  ordenar(lista, c, d, (r, f) => f==='nombre' ? r.p.nombre : f==='accion' ? r.p.accion : f==='codigo' ? r.p.codigo : r[f]);
+  const [c, d] = E.orden[E.vista];
+  ordenar(lista, c, d, (r, f) => f==='nombre' ? nom(r.p) : f==='codigo' ? r.p.codigo : r[f]);
   const avisoCiclo = ciclos.length ? `<div class="aviso err">Hay listas de materiales que se usan a sí mismas (ciclo). Revisá en Odoo: ${ciclos.map(id=>esc((E.calc.items.get(id)||{}).nombre||id)).join(', ')}</div>` : '';
-  if (!lista.length) { $('#tabla').innerHTML = avisoCiclo + `<div class="vacio">${$('#f-falta').checked ? 'No falta nada con estos filtros 🎉' : 'Sin artículos con estos filtros.'}</div>`; return; }
+  if (!lista.length) { $('#tabla').innerHTML = avisoCiclo + `<div class="vacio">${$('#f-falta').checked ? 'Nada con diferencia negativa con estos filtros 🎉' : 'Sin artículos con estos filtros.'}</div>`; return; }
   $('#tabla').innerHTML = avisoCiclo + `<table><thead><tr>
-      ${th('codigo','Código','ocultar-cel')}${th('nombre','Insumo / producto')}${th('accion','Acción','ocultar-cel')}
-      ${th('stock','Stock','n')}${th('P','Pendiente','n','Pend.')}${th('F','Pronosticado','n','Pron.')}${th('falta','Falta','n')}
+      ${th('codigo','Código','ocultar-cel')}${th('nombre', fab?'Producto / semielaborado':'Insumo')}
+      ${th('stock','Stock','n')}${th('P','Pendiente','n','Pend.')}${th('F','Planif. venta','n','Planif.')}${th('dif','Diferencia','n','Dif.')}
     </tr></thead><tbody>${lista.map(filaMaterial).join('')}</tbody></table>`;
 }
 function filaMaterial(r){
   const p = r.p, u = p.unidad, ab = E.abierto === 'm'+p.id;
   return `<tr class="fila ${ab?'abierta':''}" data-abrir="m${p.id}">
     <td class="cod ocultar-cel">${esc(p.codigo)}</td>
-    <td><div class="nom">${esc(nom(p))}</div><div class="cat"><span class="solo-cel"><span class="tag ${p.accion}">${p.accion==='fabricar'?'Fabricar':'Comprar'}</span> ${esc(p.codigo)}</span><span class="ocultar-cel">${esc(p.categoria||'')}</span>${u?' · '+esc(u):''}</div></td>
-    <td class="ocultar-cel"><span class="tag ${p.accion}">${p.accion==='fabricar'?'Fabricar':'Comprar'}</span></td>
+    <td><div class="nom">${esc(nom(p))}</div><div class="cat"><span class="solo-cel">${esc(p.codigo)} · </span>${esc(catDe(p))}${u?' · '+esc(u):''}</div></td>
     <td class="n ${r.stock<0?'neg':''}">${num(r.stock,u)}</td>
-    <td class="n">${r.P>1e-9?num(r.P,u):'<span class="muted">0</span>'}</td>
+    <td class="n">${r.P>1e-9?num(r.P,u):'<span class="muted">0</span>'}${r.faltaP>1e-9?`<span class="sub rojo">faltan ${num(r.faltaP,u)}</span>`:''}</td>
     <td class="n">${r.F>1e-9?num(r.F,u):'<span class="muted">0</span>'}</td>
-    <td class="n">${r.falta>1e-9?`<span class="falta">${num(r.falta,u)}</span>`:'<span class="ok">✓</span>'}</td>
-  </tr>${ab?`<tr><td colspan="7" class="det">${detalleMaterial(r)}</td></tr>`:''}`;
+    <td class="n">${r.dif < -1e-9 ? `<span class="dif-neg">${num(r.dif,u)}</span>` : `<span class="dif-pos">${signo(r.dif,u)}</span>`}</td>
+  </tr>${ab?`<tr><td colspan="6" class="det">${detalleMaterial(r)}</td></tr>`:''}`;
 }
 function listaDocs(docs, mas, conQuien){
   if (!docs || !docs.length) return '';
@@ -357,25 +441,26 @@ function detalleMaterial(r){
   const lin = Object.values(origen).filter(o => o.P+o.F > 1e-9).sort((a,b)=>(b.P+b.F)-(a.P+a.F));
   const nombre = id => { const x = E.calc.items.get(id); return x ? (x.codigo ? x.codigo+' · ' : '') + nom(x) : 'Producto '+id; };
   return `<div class="det-grid">
-    <div><h4>Qué se descuenta (stock)</h4>
+    <div><h4>Stock</h4>
       <table class="cuenta">
-        <tr><td>Físico${p.accion==='fabricar'?' (terminado)':''}</td><td class="n">${num(p.fisico||0,u)}</td></tr>
+        <tr><td>Físico</td><td class="n">${num(p.fisico||0,u)}</td></tr>
         <tr><td>+ Compras en camino</td><td class="n">${num(p.oc||0,u)}</td></tr>
         <tr><td>+ En fabricación</td><td class="n">${num(p.of_prod||0,u)}</td></tr>
         <tr><td>− Reservado para OF abiertas</td><td class="n">${num(p.of_consumo||0,u)}</td></tr>
         <tr><td>− Stock mínimo de seguridad</td><td class="n">${num(r.minimo,u)}</td></tr>
-        <tr class="tot"><td>Stock para planificar</td><td class="n ${r.stock<0?'neg':''}">${num(r.stock,u)}</td></tr>
+        <tr class="tot"><td>Stock</td><td class="n ${r.stock<0?'neg':''}">${num(r.stock,u)}</td></tr>
+        <tr><td>− Pendiente</td><td class="n">${num(r.P,u)}</td></tr>
+        <tr><td>− Planif. venta</td><td class="n">${num(r.F,u)}</td></tr>
+        <tr class="tot"><td>Diferencia</td><td class="n">${r.dif<-1e-9?`<span class="dif-neg">${num(r.dif,u)}</span>`:`<span class="dif-pos">${signo(r.dif,u)}</span>`}</td></tr>
       </table>
       ${E.esAdmin ? `<div class="edit"><span class="ayuda">Mínimo:</span><input class="inp" type="number" min="0" step="any" id="in-min" value="${m?+m.minimo:''}" placeholder="0">
-        <button class="btn btn-sm btn-yellow" data-guardar-min="${p.id}">Guardar</button>${m?`<button class="btn btn-sm" data-borrar-min="${p.id}">Quitar</button>`:''}</div>
-        ${m?`<div class="ayuda" style="margin-top:4px">Cargado por ${esc(m.usuario||'—')} el ${fechaLarga(m.updated_at)}</div>`:''}` : (m?`<div class="ayuda" style="margin-top:6px">Mínimo cargado por ${esc(m.usuario||'—')}</div>`:'')}
+        <button class="btn btn-sm btn-yellow" data-guardar-min="${p.id}">Guardar</button>${m?`<button class="btn btn-sm" data-borrar-min="${p.id}">Quitar</button>`:''}</div>` : ''}
     </div>
     <div><h4>Quién lo necesita</h4>
-      ${lin.length ? `<table class="cuenta"><tr class="muted"><td></td><td class="n">Pend.</td><td class="n">Pronost.</td></tr>${lin.map(o=>`<tr><td>${o.tipo==='venta'?'<b>Venta directa</b>':esc(nombre(o.de))}${o.tipo==='kit'?' <span class="muted">(pack)</span>':''}</td><td class="n">${num(o.P,u)}</td><td class="n">${num(o.F,u)}</td></tr>`).join('')}
-        <tr class="tot"><td>Total</td><td class="n">${num(r.P,u)}</td><td class="n">${num(r.F,u)}</td></tr></table>` : '<div class="ayuda">Ningún pedido ni pronóstico lo necesita. Está en la lista por el mínimo de seguridad o por reservas de OF.</div>'}
-      ${r.falta>1e-9?`<div style="margin-top:10px">Falta <b class="falta">${num(r.falta,u)}</b> ${esc(u||'')}: ${num(r.faltaP,u)} por lo pendiente y ${num(r.faltaF,u)} por el pronóstico.</div>`:'<div class="ok" style="margin-top:10px">Cubierto con el stock.</div>'}
-      ${p.accion==='fabricar'&&p.bom&&p.bom.length&&r.falta>1e-9?`<div class="ayuda" style="margin-top:6px">Lo que falta se abrió en ${p.bom.length} componente${p.bom.length>1?'s':''} de su lista de materiales.</div>`:''}
-      ${p.accion==='fabricar'&&(!p.bom||!p.bom.length)?`<div class="aviso err" style="margin-top:8px">Figura para fabricar pero no tiene lista de materiales en Odoo: no se pudo abrir en insumos.</div>`:''}
+      ${lin.length ? `<table class="cuenta"><tr class="muted"><td></td><td class="n">Pend.</td><td class="n">Planif.</td></tr>${lin.map(o=>`<tr><td>${o.tipo==='venta'?'<b>Venta del producto</b>':esc(nombre(o.de))}${o.tipo==='kit'?' <span class="muted">(pack)</span>':''}</td><td class="n">${num(o.P,u)}</td><td class="n">${num(o.F,u)}</td></tr>`).join('')}
+        <tr class="tot"><td>Total</td><td class="n">${num(r.P,u)}</td><td class="n">${num(r.F,u)}</td></tr></table>` : '<div class="ayuda">Ningún pedido ni planificación lo necesita (está por el mínimo o por reservas de OF).</div>'}
+      ${r.falta>1e-9?`<div style="margin-top:10px">${p.accion==='fabricar'?'Fabricar':'Comprar'} <b class="falta">${num(r.falta,u)}</b> ${esc(u||'')}: ${num(r.faltaP,u)} para lo pendiente y ${num(r.faltaF,u)} para la planificación.</div>`:'<div class="ok" style="margin-top:10px">Cubierto con el stock.</div>'}
+      ${p.accion==='fabricar'&&(!p.bom||!p.bom.length)?`<div class="aviso err" style="margin-top:8px">Figura para fabricar pero no tiene lista de materiales en Odoo.</div>`:''}
     </div>
     <div><h4>Documentos</h4><div class="docs">
       ${p.oc_docs&&p.oc_docs.length?'<div class="muted">Compras en camino</div>'+listaDocs(p.oc_docs,p.oc_docs_mas,true):''}
@@ -384,58 +469,22 @@ function detalleMaterial(r){
       ${p.pendiente_docs&&p.pendiente_docs.length?'<div class="muted" style="margin-top:6px">Pedidos pendientes</div>'+listaDocs(p.pendiente_docs,p.pendiente_docs_mas,true):''}
       ${!(p.oc_docs||[]).length&&!(p.of_prod_docs||[]).length&&!(p.of_consumo_docs||[]).length&&!(p.pendiente_docs||[]).length?'<span class="muted">Sin compras, órdenes ni pedidos abiertos.</span>':''}
       ${p.rutas&&p.rutas.length?`<div class="muted" style="margin-top:8px">Rutas en Odoo: ${esc(p.rutas.join(', '))}</div>`:''}
-      ${p.ruta_contradice?`<div class="ayuda" style="margin-top:4px;color:var(--yellow2)">Tiene lista de materiales para fabricar, así que se calcula como Fabricar aunque la ruta diga ${esc((p.rutas||[]).join(', ')||'Comprar')}. Conviene corregir la ruta en Odoo.</div>`:''}
+      ${p.ruta_contradice?`<div class="ayuda" style="margin-top:4px;color:var(--yellow2)">Tiene lista de materiales para fabricar: se calcula como Fabricar aunque la ruta diga ${esc((p.rutas||[]).join(', ')||'Comprar')}. Conviene corregir la ruta en Odoo.</div>`:''}
     </div></div>
   </div>${p.accion==='fabricar'&&p.bom&&p.bom.length?tablaLdm(r):''}`;
 }
 function tablaLdm(r){
-  const p = r.p, filas = E.calc.filasPorId;
-  const lin = p.bom.map(l => { const c = E.calc.items.get(l.c) || {codigo:'', nombre:'Producto '+l.c, unidad:''}; const rc = filas.get(l.c);
-    return {c, q:l.q, P:r.faltaP*l.q, F:r.faltaF*l.q, rc}; });
-  return `<div style="margin-top:16px"><h4>Lista de materiales (cantidad por unidad) y lo que pide el faltante de ${num(r.falta,p.unidad)}</h4>
-    <div class="tabla-wrap"><table class="ldm"><thead><tr><th>Componente</th><th>Acción</th><th class="n">Por unidad</th><th class="n">Pend.</th><th class="n">Pronost.</th><th class="n">Total</th><th class="n">Falta del componente</th></tr></thead><tbody>
+  const p = r.p;
+  const lin = p.bom.map(l => { const c = E.calc.items.get(l.c) || {codigo:'', nombre:'Producto '+l.c, unidad:''};
+    return {c, q:l.q, P:r.faltaP*l.q, F:r.faltaF*l.q, rc:E.calc.filasPorId.get(l.c)}; });
+  return `<div style="margin-top:16px"><h4>Lista de materiales · para fabricar ${num(r.falta,p.unidad)}</h4>
+    <div class="tabla-wrap"><table class="ldm"><thead><tr><th>Componente</th><th class="n">Por unidad</th><th class="n">Pend.</th><th class="n">Planif.</th><th class="n">Diferencia del componente</th></tr></thead><tbody>
     ${lin.map(x => `<tr><td><span class="cod">${esc(x.c.codigo)}</span> ${esc(nom(x.c))}</td>
-      <td>${x.c.accion?`<span class="tag ${x.c.accion==='fabricar'?'fabricar':'comprar'}">${x.c.accion==='fabricar'?'Fabricar':x.c.accion==='kit'?'Pack':'Comprar'}</span>`:''}</td>
       <td class="n">${(Math.round(x.q*10000)/10000).toLocaleString('es-AR')} ${esc(x.c.unidad||'')}</td>
-      <td class="n">${num(x.P,x.c.unidad)}</td><td class="n">${num(x.F,x.c.unidad)}</td><td class="n"><b>${num(x.P+x.F,x.c.unidad)}</b></td>
-      <td class="n">${x.rc?(x.rc.falta>1e-9?`<span class="falta">${num(x.rc.falta,x.c.unidad)}</span>`:'<span class="ok">✓</span>'):'—'}</td></tr>`).join('')}
+      <td class="n">${num(x.P,x.c.unidad)}</td><td class="n">${num(x.F,x.c.unidad)}</td>
+      <td class="n">${x.rc?(x.rc.dif<-1e-9?`<span class="dif-neg">${num(x.rc.dif,x.c.unidad)}</span>`:`<span class="dif-pos">${signo(x.rc.dif,x.c.unidad)}</span>`):'—'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="ayuda" style="margin-top:6px">"Falta del componente" es el total de ese insumo sumando todos los productos que lo usan, después de descontar su stock.</div></div>`;
-}
-
-function renderPrevision(){
-  const {productos} = E.calc;
-  const sum = f => productos.reduce((a,x)=>a+x[f],0);
-  const ajustados = productos.filter(x=>x.aj).length;
-  $('#kpis').innerHTML = `
-    <div class="kpi" style="--k:var(--yellow)"><div class="l">Productos con venta</div><div class="v">${productos.length}</div><div class="s">${ajustados} con previsión corregida</div></div>
-    <div class="kpi" style="--k:var(--text3)"><div class="l">Previsión 60 días</div><div class="v">${num(sum('prevision'))}</div><div class="s">unidades (todas las unidades de medida)</div></div>
-    <div class="kpi" style="--k:var(--blue)"><div class="l">Pendiente</div><div class="v">${num(sum('pendiente'))}</div><div class="s">vendido sin entregar</div></div>
-    <div class="kpi" style="--k:var(--green)"><div class="l">Pronóstico</div><div class="v">${num(sum('pronostico'))}</div><div class="s">previsión − pendiente</div></div>`;
-  const lista = filtrar(productos, x => x.p);
-  const [c, d] = E.orden.prevision;
-  ordenar(lista, c, d, (x, f) => f==='nombre' ? x.p.nombre : f==='codigo' ? x.p.codigo : f==='venta' ? (x.p.venta_365||0) : x[f]);
-  if (!lista.length) { $('#tabla').innerHTML = '<div class="vacio">Sin productos con estos filtros.</div>'; return; }
-  const meses = E.datos.meses || [];
-  $('#tabla').innerHTML = `<table><thead><tr>
-      ${th('codigo','Código','ocultar-cel')}${th('nombre','Producto')}<th class="ocultar-cel">12 meses</th>
-      ${th('venta','Venta 12 m','n','Venta')}${th('auto','Previsión auto','n ocultar-cel')}${th('prevision','Previsión 60 d','n','Prev.')}
-      ${th('pendiente','Pendiente','n','Pend.')}${th('pronostico','Pronóstico','n','Pron.')}
-    </tr></thead><tbody>${lista.map(x => {
-      const p = x.p, u = p.unidad, vm = p.venta_mes || [], mx = Math.max(1, ...vm);
-      const spark = `<span class="mini" title="${vm.map((v,i)=>(meses[i]||'')+': '+num(v,u)).join('\n')}">${vm.map(v=>`<span style="height:${Math.max(1,Math.round(v/mx*22))}px"></span>`).join('')}</span>`;
-      const celda = E.esAdmin
-        ? `<input class="prev-in ${x.aj?'ajustada':''}" type="number" min="0" step="any" data-prev="${p.id}" value="${x.aj?+x.aj.cantidad:''}" placeholder="${x.auto}" title="${x.aj?'Corregida por '+esc(x.aj.usuario||'—')+'. Borrá el número para volver a la automática ('+x.auto+').':'Automática. Escribí otro número para corregirla.'}">`
-        : `${num(x.prevision,u)}${x.aj?'<span class="badge-aj" title="Corregida por '+esc(x.aj.usuario||'—')+'">✎</span>':''}`;
-      return `<tr>
-        <td class="cod ocultar-cel">${esc(p.codigo)}</td>
-        <td><div class="nom">${esc(nom(p))}</div><div class="cat"><span class="solo-cel">${esc(p.codigo)} · </span>${esc(p.categoria||'')}${p.accion==='kit'?' · pack':''}</div></td>
-        <td class="ocultar-cel">${spark}</td>
-        <td class="n">${num(p.venta_365||0,u)}</td>
-        <td class="n ocultar-cel muted">${num(x.auto,u)}</td>
-        <td class="n">${celda}</td>
-        <td class="n">${num(x.pendiente,u)}</td>
-        <td class="n"><b>${num(x.pronostico,u)}</b></td></tr>`; }).join('')}</tbody></table>`;
+    <div class="ayuda" style="margin-top:6px">La diferencia del componente suma todos los productos que lo usan, después de descontar su stock.</div></div>`;
 }
 
 /* ───────── Excel ───────── */
@@ -444,50 +493,41 @@ function exportar(){
   const wb = XLSX.utils.book_new();
   const r2 = n => Math.round(n*100)/100, r4 = n => Math.round(n*10000)/10000;
   const hoja = (filas, nombre, anchos) => { const h = XLSX.utils.json_to_sheet(filas.length ? filas : [{'':'Sin datos'}]); h['!cols'] = anchos.map(w=>({wch:w})); XLSX.utils.book_append_sheet(wb, h, nombre); };
-  const todas = E.calc.filas;
-  const falta = todas.filter(r => r.falta > 1e-9);
-  const base = r => ({ 'Código': r.p.codigo, 'Descripción': nom(r.p), 'Categoría': r.p.categoria, 'Unidad': r.p.unidad,
-    'STOCK': r2(r.stock), 'PENDIENTE': r2(r.P), 'PRONOSTICADO': r2(r.F), 'FALTA': redondear(r.falta),
-    'Falta por pendiente': redondear(r.faltaP), 'Falta por pronóstico': redondear(r.faltaF),
+  const base = r => ({ 'Código': r.p.codigo, 'Descripción': nom(r.p), 'Categoría': catDe(r.p), 'Unidad': r.p.unidad,
+    'STOCK': r2(r.stock), 'PENDIENTE': r2(r.P), 'PLANIF. VENTA': r2(r.F), 'DIFERENCIA': r2(r.dif),
+    'A comprar / fabricar': redondear(r.falta), 'Falta para pendiente': redondear(r.faltaP),
     'Físico': r2(r.p.fisico||0), 'Compras en camino': r2(r.p.oc||0), 'En fabricación': r2(r.p.of_prod||0), 'Reservado OF': r2(r.p.of_consumo||0), 'Mínimo': r2(r.minimo) });
-  const anchos = [14,48,26,9,10,11,13,10,12,12,10,12,12,12,9];
-  // 1) Insumos a comprar
-  hoja(falta.filter(r => r.p.accion !== 'fabricar').sort((a,b)=>b.falta-a.falta).map(r => Object.assign(base(r), {
-    'OC en camino': (r.p.oc_docs||[]).map(d=>`${d.doc} ${d.quien||''} (${r2(d.cant)})`).join(' | '),
-    'Lo usan': r.origen.filter(o=>o.tipo!=='venta' && o.P+o.F>1e-9).map(o=>{ const x=E.calc.items.get(o.de); return x ? x.codigo||nom(x) : o.de; }).filter((v,i,a)=>a.indexOf(v)===i).join(', ') })),
-    'Insumos a comprar', anchos.concat([40,50]));
-  // 2) A fabricar
-  hoja(falta.filter(r => r.p.accion === 'fabricar').sort((a,b)=>b.falta-a.falta).map(r => Object.assign(base(r), {
-    'OF abiertas': (r.p.of_prod_docs||[]).map(d=>`${d.doc} (${r2(d.cant)})`).join(' | '), 'Tiene lista de materiales': r.p.bom && r.p.bom.length ? 'Sí' : 'NO' })),
-    'A fabricar', anchos.concat([30,12]));
-  // 3) Lista de materiales de lo que hay que fabricar (explosión)
+  const anchos = [14,46,26,9,10,11,13,11,12,12,10,12,12,12,9];
+  const usan = r => r.origen.filter(o=>o.tipo!=='venta' && o.P+o.F>1e-9).map(o=>{ const x=E.calc.items.get(o.de); return x ? x.codigo||nom(x) : o.de; }).filter((v,i,a)=>a.indexOf(v)===i).join(', ');
+  const ins = E.calc.filas.filter(r => r.p.accion !== 'fabricar').sort((a,b)=>a.dif-b.dif);
+  const fab = E.calc.filas.filter(r => r.p.accion === 'fabricar').sort((a,b)=>a.dif-b.dif);
+  hoja(ins.map(r => Object.assign(base(r), {'OC en camino': (r.p.oc_docs||[]).map(d=>`${d.doc} ${d.quien||''} (${r2(d.cant)})`).join(' | '), 'Lo usan': usan(r)})), 'Insumos', anchos.concat([40,50]));
+  hoja(fab.map(r => Object.assign(base(r), {'OF abiertas': (r.p.of_prod_docs||[]).map(d=>`${d.doc} (${r2(d.cant)})`).join(' | '), 'Lo usan': usan(r)})), 'A fabricar', anchos.concat([30,40]));
   const exp = [];
-  falta.filter(r => r.p.accion === 'fabricar').sort((a,b)=>b.falta-a.falta).forEach(r => (r.p.bom||[]).forEach(l => {
+  fab.filter(r => r.falta > 1e-9).forEach(r => (r.p.bom||[]).forEach(l => {
     const c = E.calc.items.get(l.c) || {codigo:'', nombre:'Producto '+l.c, unidad:''}; const rc = E.calc.filasPorId.get(l.c);
     exp.push({ 'Producto a fabricar': r.p.codigo, 'Descripción producto': nom(r.p), 'Cantidad a fabricar': redondear(r.falta),
       'Componente': c.codigo, 'Descripción componente': nom(c), 'Unidad': c.unidad, 'Por unidad': r4(l.q),
-      'Necesario pendiente': r2(r.faltaP*l.q), 'Necesario pronóstico': r2(r.faltaF*l.q), 'Necesario total': r2(r.falta*l.q),
-      'Stock del componente': rc ? r2(rc.stock) : '', 'Falta del componente (total)': rc ? redondear(rc.falta) : '' });
+      'Para pendiente': r2(r.faltaP*l.q), 'Para planif. venta': r2(r.faltaF*l.q), 'Total': r2(r.falta*l.q),
+      'Diferencia del componente': rc ? r2(rc.dif) : '' });
   }));
-  hoja(exp, 'Lista de materiales', [14,40,12,14,40,9,10,12,12,12,12,14]);
-  // 4) Todo el cálculo y 5) previsión
-  hoja(todas.slice().sort((a,b)=>a.p.accion.localeCompare(b.p.accion) || b.falta-a.falta).map(r => Object.assign({'Acción': r.p.accion==='fabricar'?'Fabricar':'Comprar'}, base(r))), 'Todo', [10].concat(anchos));
+  hoja(exp, 'Lista de materiales', [14,40,12,14,40,9,10,12,13,10,14]);
   hoja(E.calc.productos.map(x => ({
-    'Código': x.p.codigo, 'Producto': nom(x.p), 'Categoría': x.p.categoria, 'Unidad': x.p.unidad, 'Venta 12 meses': r2(x.p.venta_365||0),
-    'Previsión automática': x.auto, 'Previsión 60 días': r2(x.prevision), 'Corregida por': x.aj ? (x.aj.usuario||'sí') : '',
-    'Pendiente': r2(x.pendiente), 'Pronóstico': r2(x.pronostico) })), 'Previsión', [14,48,24,9,13,13,13,16,11,11]);
-  XLSX.writeFile(wb, `Insumos ${nombreCorto(emp.nombre)} ${fecha}.xlsx`);
+    'Categoría': catDe(x.p), 'Código': x.p.codigo, 'Producto': nom(x.p), 'Unidad': x.p.unidad, 'Venta 12 meses': r2(x.p.venta_365||0),
+    'Promedio mensual': r2(x.prom), '%': x.aj ? '' : x.pct, 'Planif. venta': r2(x.plan), 'A mano': x.aj ? 'Sí' : '', 'Pendiente': r2(x.pendiente) })),
+    'Planif. venta', [28,14,46,9,13,13,6,12,8,11]);
+  XLSX.writeFile(wb, `Planificacion ${nombreCorto(emp.nombre)} ${fecha}.xlsx`);
 }
 
 /* ───────── eventos ───────── */
 document.addEventListener('click', async ev => {
-  const t = ev.target.closest('[data-e],[data-v],[data-orden],[data-abrir],[data-guardar-min],[data-borrar-min],#btn-excel');
-  if (!t) return;
+  const t = ev.target.closest('[data-e],[data-v],[data-orden],[data-abrir],[data-cat],[data-guardar-min],[data-borrar-min],#btn-excel');
+  if (!t || ev.target.closest('input')) return;
   if (t.dataset.e) { E.empresaId = +t.dataset.e; E.abierto = null; $('#f-cat').value=''; render(); }
-  else if (t.dataset.v) { E.vista = t.dataset.v; E.abierto = null; $('#f-cat').value='';
-    document.querySelectorAll('#seg-vista button').forEach(b=>b.classList.toggle('on', b.dataset.v===E.vista)); render(); }
-  else if (t.dataset.orden) { const o = E.orden[E.vista]; if (o[0]===t.dataset.orden) o[1]*=-1; else { o[0]=t.dataset.orden; o[1]=['nombre','codigo','accion'].includes(o[0])?1:-1; } render(); }
-  else if (t.dataset.abrir) { if (ev.target.closest('input,button')) return; E.abierto = E.abierto===t.dataset.abrir ? null : t.dataset.abrir; render(); }
+  else if (t.dataset.v) { E.vista = t.dataset.v; E.abierto = null; $('#f-cat').value=''; render(); }
+  else if (t.dataset.orden) { const o = E.orden[E.vista]; if (o[0]===t.dataset.orden) o[1]*=-1; else { o[0]=t.dataset.orden; o[1]=['nombre','codigo'].includes(o[0])?1:(o[0]==='dif'?1:-1); } render(); }
+  else if (t.dataset.cat) { const c = t.dataset.cat; E.catAbiertas.has(c) ? E.catAbiertas.delete(c) : E.catAbiertas.add(c); render(); }
+  else if (t.dataset.abrir) { if (ev.target.closest('button')) return; E.abierto = E.abierto===t.dataset.abrir ? null : t.dataset.abrir; render(); }
   else if (t.dataset.guardarMin || t.dataset.borrarMin) {
     const id = +(t.dataset.guardarMin || t.dataset.borrarMin), emp = empresaActual();
     const v = t.dataset.borrarMin ? null : ($('#in-min').value === '' ? null : Math.max(0, +$('#in-min').value));
@@ -497,15 +537,23 @@ document.addEventListener('click', async ev => {
   else if (t.id === 'btn-excel') { try { exportar(); } catch(e) { toast('No se pudo armar el Excel: '+(e.message||e)); } }
 });
 document.addEventListener('change', async ev => {
-  const t = ev.target;
-  if (t.dataset && t.dataset.prev) {
-    const id = +t.dataset.prev, emp = empresaActual();
-    const v = t.value === '' ? null : Math.max(0, +t.value);
-    try { await guardar('plan_prevision', emp.id, id, v); toast(v===null?'Volvió a la previsión automática':'Previsión guardada'); render(); }
-    catch(e) { toast('No se pudo guardar: '+(e.message||e)); }
-  } else if (['f-accion','f-cat','f-falta'].includes(t.id)) render();
+  const t = ev.target, emp = E.datos && empresaActual();
+  try {
+    if (t.dataset.prev) {
+      const v = t.value === '' ? null : Math.max(0, +t.value);
+      await guardar('plan_prevision', emp.id, +t.dataset.prev, v); toast(v===null?'Volvió a la planificación automática':'Planif. venta guardada'); render();
+    } else if (t.dataset.catpct !== undefined) {
+      const v = t.value === '' ? null : +t.value;
+      await guardar('plan_parametros', emp.id, 'cat:'+t.dataset.catpct, v); toast(v===null?'La categoría usa el % general':'% de la categoría guardado'); render();
+    } else if (t.dataset.par) {
+      let v = t.value === '' ? null : +t.value;
+      if (t.dataset.par === 'meses' && v !== null) v = Math.max(0, v);
+      await guardar('plan_parametros', emp.id, t.dataset.par, v); toast('Guardado'); render();
+    } else if (['f-cat','f-falta'].includes(t.id)) render();
+    if (E.parSinTabla && (t.dataset.catpct !== undefined || t.dataset.par)) toast('Ojo: falta correr 6_planificacion_parametros.sql; el cambio no queda guardado');
+  } catch(e) { toast('No se pudo guardar: '+(e.message||e)); }
 });
-document.addEventListener('keydown', ev => { if (ev.key==='Enter' && ev.target.dataset && ev.target.dataset.prev) ev.target.blur(); });
+document.addEventListener('keydown', ev => { if (ev.key==='Enter' && ev.target.matches('input[data-prev],input[data-catpct],input[data-par]')) ev.target.blur(); });
 let tBuscar; $('#buscar').addEventListener('input', () => { clearTimeout(tBuscar); tBuscar = setTimeout(render, 200); });
 
 /* ───────── arranque ───────── */
@@ -514,23 +562,23 @@ let tBuscar; $('#buscar').addEventListener('input', () => { clearTimeout(tBuscar
     const acceso = await (window.PORTAL_ACCESO || Promise.resolve({}));
     E.esAdmin = !!(acceso && acceso.es_admin);
     const [datos] = await Promise.all([bajarArchivo(), leerAjustes()]);
-    E.datos = datos;
-    E.corregidos = normalizar(datos);
     if (!datos.empresas || !datos.empresas.length) throw new Error('El archivo de planificación no tiene empresas.');
+    E.datos = datos;
+    normalizar(datos);
     const pref = datos.empresas.find(e => /spotsline/i.test(e.nombre)) || datos.empresas[0];
     E.empresaId = pref.id;
-    $('#actualizado').textContent = 'Datos de Odoo: ' + fechaLarga(datos.actualizado) + (E.esAdmin ? ' · podés corregir previsión y mínimos' : '');
+    $('#actualizado').textContent = 'Datos de Odoo: ' + fechaLarga(datos.actualizado);
     const av = [];
+    if (E.parSinTabla) av.push(`<div class="aviso">Falta correr <b>6_planificacion_parametros.sql</b> en Supabase: los meses y los % se pueden probar pero no quedan guardados.</div>`);
     if (datos.errores && datos.errores.length) av.push(`<div class="aviso err">La última extracción tuvo errores: ${esc(datos.errores.join(' · '))}</div>`);
-    const horas = (Date.now() - new Date(datos.actualizado)) / 36e5;
-    if (horas > 30) av.push(`<div class="aviso">Los datos tienen más de un día (${fechaLarga(datos.actualizado)}). Revisá que la actualización automática esté corriendo.</div>`);
+    if ((Date.now() - new Date(datos.actualizado)) / 36e5 > 30) av.push(`<div class="aviso">Los datos tienen más de un día (${fechaLarga(datos.actualizado)}). Revisá que la actualización automática esté corriendo.</div>`);
     $('#avisos').innerHTML = av.join('');
-    $('#pie').innerHTML = `Previsión = venta confirmada de los últimos 12 meses ÷ 12 × 2 (60 días), o la corregida por el admin. Pronóstico = previsión − pendiente. Stock = físico + compras en camino + en fabricación − reservado para OF − mínimo. El stock se usa primero para el pendiente. Lo que falta fabricar se abre con la lista de materiales de Odoo (los packs se abren en sus componentes).`;
+    $('#pie').innerHTML = `Diferencia = Stock − Pendiente − Planif. venta (negativa = comprar o fabricar). Stock = físico + compras en camino + en fabricación − reservado para OF − mínimo. El stock se usa primero para lo pendiente. Lo que falta fabricar se abre con la lista de materiales de Odoo y pasa a sus componentes.`;
     render();
   } catch (e) {
     const msg = String(e && (e.message || e.error || e) || '');
     $('#tabla').innerHTML = `<div class="vacio">${/not.?found|404|Object not found/i.test(msg)
-      ? 'Todavía no hay datos de planificación. Se generan con la actualización automática desde Odoo (paso "Planificación" del workflow).'
+      ? 'Todavía no hay datos de planificación. Se generan con la actualización automática desde Odoo.'
       : 'No se pudieron cargar los datos: '+esc(msg)}</div>`;
     $('#actualizado').textContent = 'Sin datos';
   }

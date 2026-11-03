@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<script src="/Paneldepaneles/candado.js" data-panel="planificacion"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planificación de Ventas · SPL / Spotsline</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.5.0/dist/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f0f;--bg2:#1a1a1a;--bg3:#242424;--bg4:#2e2e2e;
+  --border:#333;--border2:#444;--text:#f0f0f0;--text2:#aaa;--text3:#777;
+  --yellow:#f5c400;--yellow2:#ffd740;--yellow-dim:#2a2200;
+  --red:#e74c3c;--red-bg:#2a0f0d;--green:#2ecc71;--green-bg:#0a2010;--blue:#3498db;--blue-bg:#0a1e2e;
+  --violet:#a78bfa;--violet-bg:#1a1040;
+  --radius:8px;--radius-lg:12px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
+.header{background:var(--bg2);border-bottom:1px solid var(--yellow);padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:50;min-height:56px}
+.logo{display:flex;align-items:center;gap:12px;padding:10px 0}
+.logo-icon{width:34px;height:34px;background:var(--yellow);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#000;font-size:18px;flex-shrink:0}
+.logo h1{font-size:16px;font-weight:600;letter-spacing:.3px}
+.logo small{display:block;font-size:11px;color:var(--text3);font-weight:400;margin-top:2px}
+.header-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap}
+.btn:hover{background:var(--bg4);color:var(--text)}
+.btn-yellow{background:var(--yellow);color:#000;border-color:var(--yellow);font-weight:600}
+.btn-yellow:hover{background:var(--yellow2);color:#000}
+.btn-sm{padding:4px 9px;font-size:12px}
+.main{padding:18px 24px 80px;max-width:1400px;margin:0 auto}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.seg{display:inline-flex;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:3px;gap:2px}
+.seg button{background:none;border:0;color:var(--text2);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}
+.seg button.on{background:var(--yellow);color:#000;font-weight:600}
+.inp,select.inp{background:var(--bg2);border:1px solid var(--border2);color:var(--text);border-radius:var(--radius);padding:7px 10px;font:inherit;font-size:13px}
+.inp:focus{outline:1px solid var(--yellow);border-color:var(--yellow)}
+.buscar{flex:1;min-width:180px}
+.chk{display:inline-flex;align-items:center;gap:6px;color:var(--text2);font-size:13px;cursor:pointer;user-select:none}
+.chk input{accent-color:var(--yellow)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:13px 15px;position:relative;overflow:hidden}
+.kpi::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--k,var(--border))}
+.kpi .l{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.kpi .v{font-size:24px;font-weight:800}
+.kpi .s{font-size:12px;color:var(--text2);margin-top:3px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
+.tabla-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{position:sticky;top:0;background:var(--bg3);color:var(--text3);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
+th.n,td.n{text-align:right}
+th .flecha{opacity:.7}
+td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+tbody tr.fila{cursor:pointer}
+tbody tr.fila:hover{background:var(--bg3)}
+tbody tr.abierta{background:var(--bg3)}
+.cod{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text2)}
+.nom{font-weight:600}
+.cat{font-size:11px;color:var(--text3);margin-top:2px}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.tag.comprar{background:var(--blue-bg);color:var(--blue)}
+.tag.fabricar{background:var(--violet-bg);color:var(--violet)}
+.falta{font-weight:800;color:var(--red);font-size:14px}
+.ok{color:var(--green);font-weight:700}
+.neg{color:var(--red)}
+.muted{color:var(--text3)}
+.det{background:var(--bg);padding:14px 16px;border-bottom:1px solid var(--border)}
+.det-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.det h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px}
+.cuenta{width:100%;font-size:13px}
+.cuenta td{padding:4px 0;border:0}
+.cuenta td.n{padding-left:14px;white-space:nowrap}
+.cuenta tr.tot td{border-top:1px solid var(--border2);font-weight:700;padding-top:6px}
+.docs{font-size:12px;color:var(--text2);line-height:1.6}
+.docs b{color:var(--text)}
+.edit{display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.edit .inp{width:120px;text-align:right}
+.ayuda{font-size:12px;color:var(--text3);line-height:1.5}
+.aviso{background:var(--yellow-dim);border:1px solid #5a4a00;color:var(--yellow2);padding:10px 14px;border-radius:var(--radius);margin-bottom:14px;font-size:13px}
+.aviso.err{background:var(--red-bg);border-color:#5a1a14;color:#ff9c90}
+.vacio{padding:40px 16px;text-align:center;color:var(--text3)}
+.prev-in{width:110px;text-align:right;background:var(--bg);border:1px solid var(--border2);color:var(--text);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px}
+.prev-in.ajustada{border-color:var(--yellow);color:var(--yellow2)}
+.mini{display:inline-flex;align-items:flex-end;gap:2px;height:22px;vertical-align:middle}
+.mini span{width:5px;background:var(--border2);border-radius:1px;min-height:1px}
+.mini span:last-child{background:var(--yellow)}
+.badge-aj{font-size:10px;color:var(--yellow);margin-left:4px}
+.toast{position:fixed;right:16px;bottom:70px;background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:10px 14px;border-radius:var(--radius);font-size:13px;z-index:99;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+.cargando{padding:60px;text-align:center;color:var(--text3)}
+.solo-cel{display:none}
+@media(max-width:720px){.solo-cel{display:inline}table{font-size:12px}th{font-size:10px;letter-spacing:.2px}.tag{font-size:10px;padding:2px 6px}.falta{font-size:13px}.header{padding:0 14px}.main{padding:14px 12px 80px}.kpi .v{font-size:20px}th,td{padding:8px 5px}td:first-child,th:first-child{padding-left:9px}.prev-in{width:76px}.ocultar-cel{display:none}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo"><div class="logo-icon"><i class="ti ti-list-check"></i></div>
+    <div><h1>Planificación de Ventas</h1><small id="actualizado">Cargando…</small></div></div>
+  <div class="header-actions">
+    <div class="seg" id="seg-empresa"></div>
+    <button class="btn" id="btn-excel"><i class="ti ti-file-spreadsheet"></i>Excel</button>
+  </div>
+</div>
+
+<div class="main">
+  <div id="avisos"></div>
+  <div class="bar">
+    <div class="seg" id="seg-vista">
+      <button data-v="materiales" class="on"><i class="ti ti-package"></i> Materiales a pedir</button>
+      <button data-v="prevision"><i class="ti ti-chart-arrows"></i> Previsión por producto</button>
+    </div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar" id="filtros">
+    <input class="inp buscar" id="buscar" placeholder="Buscar código o descripción…">
+    <select class="inp" id="f-accion"><option value="">Comprar y fabricar</option><option value="comprar">Solo comprar</option><option value="fabricar">Solo fabricar</option></select>
+    <select class="inp" id="f-cat"><option value="">Todas las categorías</option></select>
+    <label class="chk" id="lbl-falta"><input type="checkbox" id="f-falta" checked> Solo lo que falta</label>
+  </div>
+  <div class="card"><div class="tabla-wrap" id="tabla"><div class="cargando">Cargando datos…</div></div></div>
+  <p class="ayuda" style="margin-top:12px" id="pie"></p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════════════════════════
+   PLANIFICACIÓN DE VENTAS
+   Datos: planificacion/planificacion.json.gz (bucket "datos"), lo genera
+   odoo_planificacion.py en panel-ventas-extract. Ajustes: tablas plan_prevision
+   y plan_minimos (5_planificacion.sql). Las cuentas se hacen acá, así cada
+   ajuste del admin se ve al instante.
+
+   Por producto vendido:
+     previsión 60 días = venta confirmada 365 días / 12 × 2   (o la que cargó el admin)
+     pronóstico        = previsión − pendiente (mínimo 0)
+   Por cada artículo (producto, semielaborado o insumo), de arriba hacia abajo del árbol:
+     stock   = físico + compras en camino + en fabricación − reservado para OF abiertas − mínimo
+     falta   = pendiente + pronosticado − stock (mínimo 0). Se usa el stock primero para el pendiente.
+     Si se fabrica, lo que falta se abre con su lista de materiales y pasa a los componentes
+     (lo que falta por el pendiente va a "Pendiente" y lo del pronóstico a "Pronosticado").
+     Los kits / packs no se muestran: se abren directo en sus componentes.
+   ════════════════════════════════════════════════════════════════ */
+const SB_URL = 'https://fzylibnqqjznaddgpsjt.supabase.co';
+const SB_KEY = 'sb_publishable_zHONcBODl6nbPiLS3TSrZw_D8MVJqeE';
+const ARCHIVO = 'planificacion/planificacion.json.gz';
+const DEMO = window.PLAN_DEMO || null;   // prueba local: datos y ajustes en memoria
+const sb = DEMO ? null : window.supabase.createClient(SB_URL, SB_KEY);
+
+const E = { datos:null, empresaId:null, vista:'materiales', esAdmin:false,
+            prev:{}, min:{}, abierto:null, orden:{materiales:['falta',-1], prevision:['pronostico',-1]}, calc:null };
+
+/* ───────── utilidades ───────── */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sinAc = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const clave = (emp, id) => emp + ':' + id;
+function num(n, unidad){
+  if (n == null || isNaN(n)) return '—';
+  const entero = !unidad || /unid|u\.|^u$/i.test(unidad) || Math.abs(n) >= 100;
+  const v = (entero ? Math.ceil(n - 1e-9) : Math.round(n * 100) / 100) || 0;   // sin "-0"
+  return v.toLocaleString('es-AR', {maximumFractionDigits: entero ? 0 : 2});
+}
+const redondear = n => Math.ceil(n - 1e-9) || 0;
+const nom = p => String(p.nombre||'').replace(/^\[[^\]]*\]\s*/, '');   // sin el [código] que agrega Odoo
+function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('on'),2200); }
+function fechaLarga(iso){ try{ return new Date(iso).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return iso; } }
+
+/* ───────── datos ───────── */
+async function bajarArchivo(){
+  if (DEMO) return DEMO.datos;
+  const {data, error} = await sb.storage.from('datos').download(ARCHIVO);
+  if (error) throw error;
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  const txt = (bytes[0]===0x1f && bytes[1]===0x8b)
+    ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text()
+    : new TextDecoder().decode(bytes);
+  return JSON.parse(txt);
+}
+async function leerAjustes(){
+  if (DEMO) { E.prev = Object.assign({}, DEMO.prev||{}); E.min = Object.assign({}, DEMO.min||{}); return; }
+  const [p, m] = await Promise.all([
+    sb.from('plan_prevision').select('empresa_id,producto_id,cantidad,nota,usuario,updated_at'),
+    sb.from('plan_minimos').select('empresa_id,producto_id,minimo,usuario,updated_at')
+  ]);
+  if (p.error) throw p.error; if (m.error) throw m.error;
+  E.prev = {}; (p.data||[]).forEach(r => E.prev[clave(r.empresa_id, r.producto_id)] = r);
+  E.min  = {}; (m.data||[]).forEach(r => E.min[clave(r.empresa_id, r.producto_id)] = r);
+}
+async function guardar(tabla, emp, id, valor){
+  const k = clave(emp, id), dic = tabla==='plan_prevision' ? E.prev : E.min, campo = tabla==='plan_prevision' ? 'cantidad' : 'minimo';
+  if (valor === null) {
+    if (!DEMO) { const {error} = await sb.from(tabla).delete().eq('empresa_id', emp).eq('producto_id', id); if (error) throw error; }
+    delete dic[k];
+  } else {
+    const fila = {empresa_id:emp, producto_id:id, [campo]:valor};
+    if (!DEMO) { const {error} = await sb.from(tabla).upsert(fila); if (error) throw error; }
+    dic[k] = Object.assign(fila, {usuario: DEMO ? 'Demo' : 'vos', updated_at: new Date().toISOString()});
+  }
+}
+
+/* ───────── cálculo ───────── */
+function calcular(emp){
+  const items = new Map(emp.productos.map(p => [p.id, p]));
+  const prev = id => E.prev[clave(emp.id, id)];
+  const minimo = id => { const r = E.min[clave(emp.id, id)]; return r ? +r.minimo : 0; };
+  const R = new Map();   // id -> resultado
+  const res = id => { if (!R.has(id)) { const p = items.get(id) || {id, nombre:'Producto '+id, codigo:'', bom:[], accion:'comprar'};
+      R.set(id, {p, P:0, F:0, origen:[], stock:0, minimo:0, falta:0, faltaP:0, faltaF:0}); } return R.get(id); };
+
+  // 1) Demanda de lo vendido
+  const productos = [];
+  for (const p of emp.productos) {
+    const auto = redondear((p.venta_365||0) / 12 * 2);
+    const aj = prev(p.id);
+    if (!(p.venta_365 > 0 || p.pendiente > 0 || aj)) continue;
+    const prevision = aj ? +aj.cantidad : auto;
+    const pronostico = Math.max(0, prevision - (p.pendiente||0));
+    productos.push({p, auto, aj, prevision, pendiente:p.pendiente||0, pronostico});
+    const r = res(p.id);
+    r.P += p.pendiente||0; r.F += pronostico;
+    r.origen.push({tipo:'venta', P:p.pendiente||0, F:pronostico});
+  }
+  // los que tienen mínimo cargado entran aunque no tengan demanda
+  Object.keys(E.min).forEach(k => { const [e, id] = k.split(':').map(Number); if (e === emp.id && items.has(id)) res(id); });
+
+  // 2) Orden: cada artículo después de todos los que lo usan (se abre fabricar y kit)
+  const abre = p => p && p.bom && p.bom.length && (p.accion === 'fabricar' || p.accion === 'kit');
+  const orden = [], estado = new Map(), ciclos = [];
+  const visitar = id => {
+    const st = estado.get(id);
+    if (st === 2) return; if (st === 1) { ciclos.push(id); return; }
+    estado.set(id, 1);
+    const p = items.get(id);
+    if (abre(p)) p.bom.forEach(l => visitar(l.c));
+    estado.set(id, 2); orden.push(id);
+  };
+  [...R.keys()].forEach(visitar);
+  orden.reverse();
+
+  // 3) Neteo y explosión
+  for (const id of orden) {
+    const r = R.get(id); if (!r) continue;
+    const p = r.p;
+    if (p.accion === 'kit') {   // pasa todo a los componentes, sin stock propio
+      (p.bom||[]).forEach(l => { const c = res(l.c); c.P += r.P*l.q; c.F += r.F*l.q; c.origen.push({tipo:'kit', de:id, P:r.P*l.q, F:r.F*l.q}); });
+      continue;
+    }
+    r.minimo = minimo(id);
+    r.stock = (p.fisico||0) + (p.oc||0) + (p.of_prod||0) - (p.of_consumo||0) - r.minimo;
+    r.falta  = Math.max(0, r.P + r.F - r.stock);
+    r.faltaP = Math.min(r.falta, Math.max(0, r.P - r.stock));
+    r.faltaF = r.falta - r.faltaP;
+    if (abre(p) && r.falta > 1e-9) {
+      p.bom.forEach(l => { const c = res(l.c); c.P += r.faltaP*l.q; c.F += r.faltaF*l.q; c.origen.push({tipo:'fab', de:id, P:r.faltaP*l.q, F:r.faltaF*l.q}); });
+    }
+  }
+  const filas = [...R.values()].filter(r => r.p.accion !== 'kit');
+  return {productos, filas, ciclos, items};
+}
+
+/* ───────── pantalla ───────── */
+function empresaActual(){ return E.datos.empresas.find(e => e.id === E.empresaId) || E.datos.empresas[0]; }
+function nombreCorto(n){ return /spl/i.test(n) ? 'SPL' : (/spotsline/i.test(n) ? 'Spotsline' : n); }
+
+function pintarEmpresas(){
+  $('#seg-empresa').innerHTML = E.datos.empresas.map(e => `<button data-e="${e.id}" class="${e.id===E.empresaId?'on':''}">${esc(nombreCorto(e.nombre))}</button>`).join('');
+}
+function pintarCategorias(){
+  const emp = empresaActual();
+  const cats = [...new Set((E.vista==='materiales' ? E.calc.filas.map(r=>r.p) : E.calc.productos.map(x=>x.p)).map(p=>p.categoria||'Sin categoría'))].sort();
+  const sel = $('#f-cat'), val = sel.value;
+  sel.innerHTML = '<option value="">Todas las categorías</option>' + cats.map(c=>`<option ${c===val?'selected':''}>${esc(c)}</option>`).join('');
+}
+function filtrar(lista, getP){
+  const q = sinAc($('#buscar').value).trim(), ac = $('#f-accion').value, cat = $('#f-cat').value;
+  return lista.filter(x => { const p = getP(x);
+    if (q && !sinAc(p.codigo+' '+p.nombre).includes(q)) return false;
+    if (ac && p.accion !== ac) return false;
+    if (cat && (p.categoria||'Sin categoría') !== cat) return false;
+    return true; });
+}
+function ordenar(lista, campo, dir, get){
+  return lista.sort((a,b) => { const x=get(a,campo), y=get(b,campo);
+    return (typeof x==='string' ? x.localeCompare(y,'es') : (x-y)) * dir; });
+}
+function th(campo, txt, cls, corto){
+  const [c, d] = E.orden[E.vista];
+  return `<th class="${cls||''}" data-orden="${campo}">${corto?`<span class="ocultar-cel">${txt}</span><span class="solo-cel">${corto}</span>`:txt}${c===campo?` <span class="flecha">${d<0?'▼':'▲'}</span>`:''}</th>`;
+}
+
+function render(){
+  if (!E.datos) return;
+  const emp = empresaActual();
+  E.calc = calcular(emp);
+  pintarEmpresas(); pintarCategorias();
+  $('#lbl-falta').style.display = E.vista==='materiales' ? '' : 'none';
+  $('#f-accion').style.display = E.vista==='materiales' ? '' : 'none';
+  if (E.vista === 'materiales') renderMateriales(); else renderPrevision();
+}
+
+function renderMateriales(){
+  const {filas, ciclos} = E.calc;
+  const conFalta = filas.filter(r => r.falta > 1e-9);
+  const k = a => conFalta.filter(r => r.p.accion===a).length;
+  $('#kpis').innerHTML = `
+    <div class="kpi" style="--k:var(--blue)"><div class="l">Insumos a comprar</div><div class="v">${k('comprar')}</div><div class="s">con faltante</div></div>
+    <div class="kpi" style="--k:var(--violet)"><div class="l">A fabricar</div><div class="v">${k('fabricar')}</div><div class="s">productos y semielaborados</div></div>
+    <div class="kpi" style="--k:var(--yellow)"><div class="l">Artículos en el cálculo</div><div class="v">${filas.length}</div><div class="s">${filas.length-conFalta.length} cubiertos con stock</div></div>
+    <div class="kpi" style="--k:var(--green)"><div class="l">Horizonte</div><div class="v">${E.datos.dias_prevision||60} días</div><div class="s">venta prom. ${E.datos.meses_historia||12} meses</div></div>`;
+  let lista = filtrar(filas, r => r.p);
+  if ($('#f-falta').checked) lista = lista.filter(r => r.falta > 1e-9);
+  const [c, d] = E.orden.materiales;
+  ordenar(lista, c, d, (r, f) => f==='nombre' ? r.p.nombre : f==='accion' ? r.p.accion : f==='codigo' ? r.p.codigo : r[f]);
+  const avisoCiclo = ciclos.length ? `<div class="aviso err">Hay listas de materiales que se usan a sí mismas (ciclo). Revisá en Odoo: ${ciclos.map(id=>esc((E.calc.items.get(id)||{}).nombre||id)).join(', ')}</div>` : '';
+  if (!lista.length) { $('#tabla').innerHTML = avisoCiclo + `<div class="vacio">${$('#f-falta').checked ? 'No falta nada con estos filtros 🎉' : 'Sin artículos con estos filtros.'}</div>`; return; }
+  $('#tabla').innerHTML = avisoCiclo + `<table><thead><tr>
+      ${th('codigo','Código','ocultar-cel')}${th('nombre','Insumo / producto')}${th('accion','Acción','ocultar-cel')}
+      ${th('stock','Stock','n')}${th('P','Pendiente','n','Pend.')}${th('F','Pronosticado','n','Pron.')}${th('falta','Falta','n')}
+    </tr></thead><tbody>${lista.map(filaMaterial).join('')}</tbody></table>`;
+}
+function filaMaterial(r){
+  const p = r.p, u = p.unidad, ab = E.abierto === 'm'+p.id;
+  return `<tr class="fila ${ab?'abierta':''}" data-abrir="m${p.id}">
+    <td class="cod ocultar-cel">${esc(p.codigo)}</td>
+    <td><div class="nom">${esc(nom(p))}</div><div class="cat"><span class="solo-cel"><span class="tag ${p.accion}">${p.accion==='fabricar'?'Fabricar':'Comprar'}</span> ${esc(p.codigo)}</span><span class="ocultar-cel">${esc(p.categoria||'')}</span>${u?' · '+esc(u):''}</div></td>
+    <td class="ocultar-cel"><span class="tag ${p.accion}">${p.accion==='fabricar'?'Fabricar':'Comprar'}</span></td>
+    <td class="n ${r.stock<0?'neg':''}">${num(r.stock,u)}</td>
+    <td class="n">${r.P>1e-9?num(r.P,u):'<span class="muted">0</span>'}</td>
+    <td class="n">${r.F>1e-9?num(r.F,u):'<span class="muted">0</span>'}</td>
+    <td class="n">${r.falta>1e-9?`<span class="falta">${num(r.falta,u)}</span>`:'<span class="ok">✓</span>'}</td>
+  </tr>${ab?`<tr><td colspan="7" class="det">${detalleMaterial(r)}</td></tr>`:''}`;
+}
+function listaDocs(docs, mas, conQuien){
+  if (!docs || !docs.length) return '';
+  return docs.map(d => `<div><b>${esc(d.doc)}</b>${conQuien&&d.quien?' · '+esc(d.quien):''}${d.fecha?' · '+esc(d.fecha.split('-').reverse().join('/')):''} — ${num(d.cant)}</div>`).join('') + (mas?`<div class="muted">y ${mas} más</div>`:'');
+}
+function detalleMaterial(r){
+  const p = r.p, u = p.unidad, emp = empresaActual();
+  const m = E.min[clave(emp.id, p.id)];
+  const origen = {};
+  r.origen.forEach(o => { const key = o.tipo==='venta' ? 'venta' : o.de; (origen[key] = origen[key] || {tipo:o.tipo, de:o.de, P:0, F:0}); origen[key].P += o.P; origen[key].F += o.F; });
+  const lin = Object.values(origen).filter(o => o.P+o.F > 1e-9).sort((a,b)=>(b.P+b.F)-(a.P+a.F));
+  const nombre = id => { const x = E.calc.items.get(id); return x ? (x.codigo ? x.codigo+' · ' : '') + nom(x) : 'Producto '+id; };
+  return `<div class="det-grid">
+    <div><h4>Qué se descuenta (stock)</h4>
+      <table class="cuenta">
+        <tr><td>Físico${p.accion==='fabricar'?' (terminado)':''}</td><td class="n">${num(p.fisico||0,u)}</td></tr>
+        <tr><td>+ Compras en camino</td><td class="n">${num(p.oc||0,u)}</td></tr>
+        <tr><td>+ En fabricación</td><td class="n">${num(p.of_prod||0,u)}</td></tr>
+        <tr><td>− Reservado para OF abiertas</td><td class="n">${num(p.of_consumo||0,u)}</td></tr>
+        <tr><td>− Stock mínimo de seguridad</td><td class="n">${num(r.minimo,u)}</td></tr>
+        <tr class="tot"><td>Stock para planificar</td><td class="n ${r.stock<0?'neg':''}">${num(r.stock,u)}</td></tr>
+      </table>
+      ${E.esAdmin ? `<div class="edit"><span class="ayuda">Mínimo:</span><input class="inp" type="number" min="0" step="any" id="in-min" value="${m?+m.minimo:''}" placeholder="0">
+        <button class="btn btn-sm btn-yellow" data-guardar-min="${p.id}">Guardar</button>${m?`<button class="btn btn-sm" data-borrar-min="${p.id}">Quitar</button>`:''}</div>
+        ${m?`<div class="ayuda" style="margin-top:4px">Cargado por ${esc(m.usuario||'—')} el ${fechaLarga(m.updated_at)}</div>`:''}` : (m?`<div class="ayuda" style="margin-top:6px">Mínimo cargado por ${esc(m.usuario||'—')}</div>`:'')}
+    </div>
+    <div><h4>Quién lo necesita</h4>
+      ${lin.length ? `<table class="cuenta"><tr class="muted"><td></td><td class="n">Pend.</td><td class="n">Pronost.</td></tr>${lin.map(o=>`<tr><td>${o.tipo==='venta'?'<b>Venta directa</b>':esc(nombre(o.de))}${o.tipo==='kit'?' <span class="muted">(pack)</span>':''}</td><td class="n">${num(o.P,u)}</td><td class="n">${num(o.F,u)}</td></tr>`).join('')}
+        <tr class="tot"><td>Total</td><td class="n">${num(r.P,u)}</td><td class="n">${num(r.F,u)}</td></tr></table>` : '<div class="ayuda">Ningún pedido ni pronóstico lo necesita. Está en la lista por el mínimo de seguridad o por reservas de OF.</div>'}
+      ${r.falta>1e-9?`<div style="margin-top:10px">Falta <b class="falta">${num(r.falta,u)}</b> ${esc(u||'')}: ${num(r.faltaP,u)} por lo pendiente y ${num(r.faltaF,u)} por el pronóstico.</div>`:'<div class="ok" style="margin-top:10px">Cubierto con el stock.</div>'}
+      ${p.accion==='fabricar'&&p.bom&&p.bom.length&&r.falta>1e-9?`<div class="ayuda" style="margin-top:6px">Lo que falta se abrió en ${p.bom.length} componente${p.bom.length>1?'s':''} de su lista de materiales.</div>`:''}
+      ${p.accion==='fabricar'&&(!p.bom||!p.bom.length)?`<div class="aviso err" style="margin-top:8px">Figura para fabricar pero no tiene lista de materiales en Odoo: no se pudo abrir en insumos.</div>`:''}
+    </div>
+    <div><h4>Documentos</h4><div class="docs">
+      ${p.oc_docs&&p.oc_docs.length?'<div class="muted">Compras en camino</div>'+listaDocs(p.oc_docs,p.oc_docs_mas,true):''}
+      ${p.of_prod_docs&&p.of_prod_docs.length?'<div class="muted" style="margin-top:6px">Fabricando</div>'+listaDocs(p.of_prod_docs,p.of_prod_docs_mas):''}
+      ${p.of_consumo_docs&&p.of_consumo_docs.length?'<div class="muted" style="margin-top:6px">Reservado para</div>'+listaDocs(p.of_consumo_docs,p.of_consumo_docs_mas):''}
+      ${p.pendiente_docs&&p.pendiente_docs.length?'<div class="muted" style="margin-top:6px">Pedidos pendientes</div>'+listaDocs(p.pendiente_docs,p.pendiente_docs_mas,true):''}
+      ${!(p.oc_docs||[]).length&&!(p.of_prod_docs||[]).length&&!(p.of_consumo_docs||[]).length&&!(p.pendiente_docs||[]).length?'<span class="muted">Sin compras, órdenes ni pedidos abiertos.</span>':''}
+      ${p.rutas&&p.rutas.length?`<div class="muted" style="margin-top:8px">Rutas en Odoo: ${esc(p.rutas.join(', '))}</div>`:''}
+    </div></div>
+  </div>`;
+}
+
+function renderPrevision(){
+  const {productos} = E.calc;
+  const sum = f => productos.reduce((a,x)=>a+x[f],0);
+  const ajustados = productos.filter(x=>x.aj).length;
+  $('#kpis').innerHTML = `
+    <div class="kpi" style="--k:var(--yellow)"><div class="l">Productos con venta</div><div class="v">${productos.length}</div><div class="s">${ajustados} con previsión corregida</div></div>
+    <div class="kpi" style="--k:var(--text3)"><div class="l">Previsión 60 días</div><div class="v">${num(sum('prevision'))}</div><div class="s">unidades (todas las unidades de medida)</div></div>
+    <div class="kpi" style="--k:var(--blue)"><div class="l">Pendiente</div><div class="v">${num(sum('pendiente'))}</div><div class="s">vendido sin entregar</div></div>
+    <div class="kpi" style="--k:var(--green)"><div class="l">Pronóstico</div><div class="v">${num(sum('pronostico'))}</div><div class="s">previsión − pendiente</div></div>`;
+  const lista = filtrar(productos, x => x.p);
+  const [c, d] = E.orden.prevision;
+  ordenar(lista, c, d, (x, f) => f==='nombre' ? x.p.nombre : f==='codigo' ? x.p.codigo : f==='venta' ? (x.p.venta_365||0) : x[f]);
+  if (!lista.length) { $('#tabla').innerHTML = '<div class="vacio">Sin productos con estos filtros.</div>'; return; }
+  const meses = E.datos.meses || [];
+  $('#tabla').innerHTML = `<table><thead><tr>
+      ${th('codigo','Código','ocultar-cel')}${th('nombre','Producto')}<th class="ocultar-cel">12 meses</th>
+      ${th('venta','Venta 12 m','n','Venta')}${th('auto','Previsión auto','n ocultar-cel')}${th('prevision','Previsión 60 d','n','Prev.')}
+      ${th('pendiente','Pendiente','n','Pend.')}${th('pronostico','Pronóstico','n','Pron.')}
+    </tr></thead><tbody>${lista.map(x => {
+      const p = x.p, u = p.unidad, vm = p.venta_mes || [], mx = Math.max(1, ...vm);
+      const spark = `<span class="mini" title="${vm.map((v,i)=>(meses[i]||'')+': '+num(v,u)).join('\n')}">${vm.map(v=>`<span style="height:${Math.max(1,Math.round(v/mx*22))}px"></span>`).join('')}</span>`;
+      const celda = E.esAdmin
+        ? `<input class="prev-in ${x.aj?'ajustada':''}" type="number" min="0" step="any" data-prev="${p.id}" value="${x.aj?+x.aj.cantidad:''}" placeholder="${x.auto}" title="${x.aj?'Corregida por '+esc(x.aj.usuario||'—')+'. Borrá el número para volver a la automática ('+x.auto+').':'Automática. Escribí otro número para corregirla.'}">`
+        : `${num(x.prevision,u)}${x.aj?'<span class="badge-aj" title="Corregida por '+esc(x.aj.usuario||'—')+'">✎</span>':''}`;
+      return `<tr>
+        <td class="cod ocultar-cel">${esc(p.codigo)}</td>
+        <td><div class="nom">${esc(nom(p))}</div><div class="cat"><span class="solo-cel">${esc(p.codigo)} · </span>${esc(p.categoria||'')}${p.accion==='kit'?' · pack':''}</div></td>
+        <td class="ocultar-cel">${spark}</td>
+        <td class="n">${num(p.venta_365||0,u)}</td>
+        <td class="n ocultar-cel muted">${num(x.auto,u)}</td>
+        <td class="n">${celda}</td>
+        <td class="n">${num(x.pendiente,u)}</td>
+        <td class="n"><b>${num(x.pronostico,u)}</b></td></tr>`; }).join('')}</tbody></table>`;
+}
+
+/* ───────── Excel ───────── */
+function exportar(){
+  const emp = empresaActual(), fecha = new Date().toISOString().slice(0,10);
+  const wb = XLSX.utils.book_new();
+  let mat = filtrar(E.calc.filas, r=>r.p);
+  if ($('#f-falta').checked) mat = mat.filter(r => r.falta > 1e-9);
+  mat.sort((a,b)=>a.p.accion.localeCompare(b.p.accion) || b.falta-a.falta);
+  const r2 = n => Math.round(n*100)/100;
+  const h1 = XLSX.utils.json_to_sheet(mat.map(r => ({
+    'Acción': r.p.accion==='fabricar'?'Fabricar':'Comprar', 'Código': r.p.codigo, 'Descripción': nom(r.p), 'Categoría': r.p.categoria, 'Unidad': r.p.unidad,
+    'Físico': r2(r.p.fisico||0), 'Compras en camino': r2(r.p.oc||0), 'En fabricación': r2(r.p.of_prod||0), 'Reservado OF': r2(r.p.of_consumo||0), 'Mínimo': r2(r.minimo),
+    'STOCK': r2(r.stock), 'PENDIENTE': r2(r.P), 'PRONOSTICADO': r2(r.F), 'FALTA': redondear(r.falta),
+    'Proveedor / OC en camino': (r.p.oc_docs||[]).map(d=>d.doc+' '+(d.quien||'')).join(' | ') })));
+  h1['!cols'] = [10,14,48,24,9,10,12,12,12,10,11,11,13,10,40].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, h1, 'Materiales');
+  const h2 = XLSX.utils.json_to_sheet(E.calc.productos.map(x => ({
+    'Código': x.p.codigo, 'Producto': nom(x.p), 'Categoría': x.p.categoria, 'Unidad': x.p.unidad, 'Venta 12 meses': r2(x.p.venta_365||0),
+    'Previsión automática': x.auto, 'Previsión 60 días': r2(x.prevision), 'Corregida por': x.aj ? (x.aj.usuario||'sí') : '',
+    'Pendiente': r2(x.pendiente), 'Pronóstico': r2(x.pronostico) })));
+  h2['!cols'] = [14,48,24,9,13,13,13,16,11,11].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, h2, 'Previsión');
+  XLSX.writeFile(wb, `Planificacion ${nombreCorto(emp.nombre)} ${fecha}.xlsx`);
+}
+
+/* ───────── eventos ───────── */
+document.addEventListener('click', async ev => {
+  const t = ev.target.closest('[data-e],[data-v],[data-orden],[data-abrir],[data-guardar-min],[data-borrar-min],#btn-excel');
+  if (!t) return;
+  if (t.dataset.e) { E.empresaId = +t.dataset.e; E.abierto = null; $('#f-cat').value=''; render(); }
+  else if (t.dataset.v) { E.vista = t.dataset.v; E.abierto = null; $('#f-cat').value='';
+    document.querySelectorAll('#seg-vista button').forEach(b=>b.classList.toggle('on', b.dataset.v===E.vista)); render(); }
+  else if (t.dataset.orden) { const o = E.orden[E.vista]; if (o[0]===t.dataset.orden) o[1]*=-1; else { o[0]=t.dataset.orden; o[1]=['nombre','codigo','accion'].includes(o[0])?1:-1; } render(); }
+  else if (t.dataset.abrir) { if (ev.target.closest('input,button')) return; E.abierto = E.abierto===t.dataset.abrir ? null : t.dataset.abrir; render(); }
+  else if (t.dataset.guardarMin || t.dataset.borrarMin) {
+    const id = +(t.dataset.guardarMin || t.dataset.borrarMin), emp = empresaActual();
+    const v = t.dataset.borrarMin ? null : ($('#in-min').value === '' ? null : Math.max(0, +$('#in-min').value));
+    try { await guardar('plan_minimos', emp.id, id, v); toast(v===null?'Mínimo quitado':'Mínimo guardado'); render(); }
+    catch(e) { toast('No se pudo guardar: '+(e.message||e)); }
+  }
+  else if (t.id === 'btn-excel') { try { exportar(); } catch(e) { toast('No se pudo armar el Excel: '+(e.message||e)); } }
+});
+document.addEventListener('change', async ev => {
+  const t = ev.target;
+  if (t.dataset && t.dataset.prev) {
+    const id = +t.dataset.prev, emp = empresaActual();
+    const v = t.value === '' ? null : Math.max(0, +t.value);
+    try { await guardar('plan_prevision', emp.id, id, v); toast(v===null?'Volvió a la previsión automática':'Previsión guardada'); render(); }
+    catch(e) { toast('No se pudo guardar: '+(e.message||e)); }
+  } else if (['f-accion','f-cat','f-falta'].includes(t.id)) render();
+});
+document.addEventListener('keydown', ev => { if (ev.key==='Enter' && ev.target.dataset && ev.target.dataset.prev) ev.target.blur(); });
+let tBuscar; $('#buscar').addEventListener('input', () => { clearTimeout(tBuscar); tBuscar = setTimeout(render, 200); });
+
+/* ───────── arranque ───────── */
+(async function(){
+  try {
+    const acceso = await (window.PORTAL_ACCESO || Promise.resolve({}));
+    E.esAdmin = !!(acceso && acceso.es_admin);
+    const [datos] = await Promise.all([bajarArchivo(), leerAjustes()]);
+    E.datos = datos;
+    if (!datos.empresas || !datos.empresas.length) throw new Error('El archivo de planificación no tiene empresas.');
+    const pref = datos.empresas.find(e => /spotsline/i.test(e.nombre)) || datos.empresas[0];
+    E.empresaId = pref.id;
+    $('#actualizado').textContent = 'Datos de Odoo: ' + fechaLarga(datos.actualizado) + (E.esAdmin ? ' · podés corregir previsión y mínimos' : '');
+    const av = [];
+    if (datos.errores && datos.errores.length) av.push(`<div class="aviso err">La última extracción tuvo errores: ${esc(datos.errores.join(' · '))}</div>`);
+    const horas = (Date.now() - new Date(datos.actualizado)) / 36e5;
+    if (horas > 30) av.push(`<div class="aviso">Los datos tienen más de un día (${fechaLarga(datos.actualizado)}). Revisá que la actualización automática esté corriendo.</div>`);
+    $('#avisos').innerHTML = av.join('');
+    $('#pie').innerHTML = `Previsión = venta confirmada de los últimos 12 meses ÷ 12 × 2 (60 días), o la corregida por el admin. Pronóstico = previsión − pendiente. Stock = físico + compras en camino + en fabricación − reservado para OF − mínimo. El stock se usa primero para el pendiente. Lo que falta fabricar se abre con la lista de materiales de Odoo (los packs se abren en sus componentes).`;
+    render();
+  } catch (e) {
+    const msg = String(e && (e.message || e.error || e) || '');
+    $('#tabla').innerHTML = `<div class="vacio">${/not.?found|404|Object not found/i.test(msg)
+      ? 'Todavía no hay datos de planificación. Se generan con la actualización automática desde Odoo (paso "Planificación" del workflow).'
+      : 'No se pudieron cargar los datos: '+esc(msg)}</div>`;
+    $('#actualizado').textContent = 'Sin datos';
+  }
+})();
+</script>
+</body>
+</html>

@@ -62,6 +62,7 @@ tbody tr.abierta{background:var(--bg3)}
 .tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap}
 .tag.comprar{background:var(--blue-bg);color:var(--blue)}
 .tag.fabricar{background:var(--violet-bg);color:var(--violet)}
+.ldm th{position:static;cursor:default}.ldm td,.ldm th{padding:6px 8px}
 .falta{font-weight:800;color:var(--red);font-size:14px}
 .ok{color:var(--green);font-weight:700}
 .neg{color:var(--red)}
@@ -100,7 +101,7 @@ tbody tr.abierta{background:var(--bg3)}
     <div><h1>Planificación de Ventas</h1><small id="actualizado">Cargando…</small></div></div>
   <div class="header-actions">
     <div class="seg" id="seg-empresa"></div>
-    <button class="btn" id="btn-excel"><i class="ti ti-file-spreadsheet"></i>Excel</button>
+    <button class="btn" id="btn-excel"><i class="ti ti-file-spreadsheet"></i>Informe de insumos</button>
   </div>
 </div>
 
@@ -201,6 +202,16 @@ async function guardar(tabla, emp, id, valor){
   }
 }
 
+/* Si un artículo tiene lista de materiales "Fabricar este producto" en Odoo, se fabrica,
+   aunque su ruta diga Comprar/Buy (hay rutas mal cargadas). Los kits se abren siempre. */
+function normalizar(datos){
+  let n = 0;
+  (datos.empresas||[]).forEach(e => e.productos.forEach(p => {
+    if (p.bom && p.bom.length && p.accion === 'comprar') { p.accion = 'fabricar'; p.ruta_contradice = true; n++; }
+  }));
+  return n;
+}
+
 /* ───────── cálculo ───────── */
 function calcular(emp){
   const items = new Map(emp.productos.map(p => [p.id, p]));
@@ -258,7 +269,8 @@ function calcular(emp){
     }
   }
   const filas = [...R.values()].filter(r => r.p.accion !== 'kit');
-  return {productos, filas, ciclos, items};
+  const filasPorId = new Map(filas.map(r => [r.p.id, r]));
+  return {productos, filas, filasPorId, ciclos, items};
 }
 
 /* ───────── pantalla ───────── */
@@ -372,8 +384,23 @@ function detalleMaterial(r){
       ${p.pendiente_docs&&p.pendiente_docs.length?'<div class="muted" style="margin-top:6px">Pedidos pendientes</div>'+listaDocs(p.pendiente_docs,p.pendiente_docs_mas,true):''}
       ${!(p.oc_docs||[]).length&&!(p.of_prod_docs||[]).length&&!(p.of_consumo_docs||[]).length&&!(p.pendiente_docs||[]).length?'<span class="muted">Sin compras, órdenes ni pedidos abiertos.</span>':''}
       ${p.rutas&&p.rutas.length?`<div class="muted" style="margin-top:8px">Rutas en Odoo: ${esc(p.rutas.join(', '))}</div>`:''}
+      ${p.ruta_contradice?`<div class="ayuda" style="margin-top:4px;color:var(--yellow2)">Tiene lista de materiales para fabricar, así que se calcula como Fabricar aunque la ruta diga ${esc((p.rutas||[]).join(', ')||'Comprar')}. Conviene corregir la ruta en Odoo.</div>`:''}
     </div></div>
-  </div>`;
+  </div>${p.accion==='fabricar'&&p.bom&&p.bom.length?tablaLdm(r):''}`;
+}
+function tablaLdm(r){
+  const p = r.p, filas = E.calc.filasPorId;
+  const lin = p.bom.map(l => { const c = E.calc.items.get(l.c) || {codigo:'', nombre:'Producto '+l.c, unidad:''}; const rc = filas.get(l.c);
+    return {c, q:l.q, P:r.faltaP*l.q, F:r.faltaF*l.q, rc}; });
+  return `<div style="margin-top:16px"><h4>Lista de materiales (cantidad por unidad) y lo que pide el faltante de ${num(r.falta,p.unidad)}</h4>
+    <div class="tabla-wrap"><table class="ldm"><thead><tr><th>Componente</th><th>Acción</th><th class="n">Por unidad</th><th class="n">Pend.</th><th class="n">Pronost.</th><th class="n">Total</th><th class="n">Falta del componente</th></tr></thead><tbody>
+    ${lin.map(x => `<tr><td><span class="cod">${esc(x.c.codigo)}</span> ${esc(nom(x.c))}</td>
+      <td>${x.c.accion?`<span class="tag ${x.c.accion==='fabricar'?'fabricar':'comprar'}">${x.c.accion==='fabricar'?'Fabricar':x.c.accion==='kit'?'Pack':'Comprar'}</span>`:''}</td>
+      <td class="n">${(Math.round(x.q*10000)/10000).toLocaleString('es-AR')} ${esc(x.c.unidad||'')}</td>
+      <td class="n">${num(x.P,x.c.unidad)}</td><td class="n">${num(x.F,x.c.unidad)}</td><td class="n"><b>${num(x.P+x.F,x.c.unidad)}</b></td>
+      <td class="n">${x.rc?(x.rc.falta>1e-9?`<span class="falta">${num(x.rc.falta,x.c.unidad)}</span>`:'<span class="ok">✓</span>'):'—'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="ayuda" style="margin-top:6px">"Falta del componente" es el total de ese insumo sumando todos los productos que lo usan, después de descontar su stock.</div></div>`;
 }
 
 function renderPrevision(){
@@ -415,24 +442,41 @@ function renderPrevision(){
 function exportar(){
   const emp = empresaActual(), fecha = new Date().toISOString().slice(0,10);
   const wb = XLSX.utils.book_new();
-  let mat = filtrar(E.calc.filas, r=>r.p);
-  if ($('#f-falta').checked) mat = mat.filter(r => r.falta > 1e-9);
-  mat.sort((a,b)=>a.p.accion.localeCompare(b.p.accion) || b.falta-a.falta);
-  const r2 = n => Math.round(n*100)/100;
-  const h1 = XLSX.utils.json_to_sheet(mat.map(r => ({
-    'Acción': r.p.accion==='fabricar'?'Fabricar':'Comprar', 'Código': r.p.codigo, 'Descripción': nom(r.p), 'Categoría': r.p.categoria, 'Unidad': r.p.unidad,
-    'Físico': r2(r.p.fisico||0), 'Compras en camino': r2(r.p.oc||0), 'En fabricación': r2(r.p.of_prod||0), 'Reservado OF': r2(r.p.of_consumo||0), 'Mínimo': r2(r.minimo),
+  const r2 = n => Math.round(n*100)/100, r4 = n => Math.round(n*10000)/10000;
+  const hoja = (filas, nombre, anchos) => { const h = XLSX.utils.json_to_sheet(filas.length ? filas : [{'':'Sin datos'}]); h['!cols'] = anchos.map(w=>({wch:w})); XLSX.utils.book_append_sheet(wb, h, nombre); };
+  const todas = E.calc.filas;
+  const falta = todas.filter(r => r.falta > 1e-9);
+  const base = r => ({ 'Código': r.p.codigo, 'Descripción': nom(r.p), 'Categoría': r.p.categoria, 'Unidad': r.p.unidad,
     'STOCK': r2(r.stock), 'PENDIENTE': r2(r.P), 'PRONOSTICADO': r2(r.F), 'FALTA': redondear(r.falta),
-    'Proveedor / OC en camino': (r.p.oc_docs||[]).map(d=>d.doc+' '+(d.quien||'')).join(' | ') })));
-  h1['!cols'] = [10,14,48,24,9,10,12,12,12,10,11,11,13,10,40].map(w=>({wch:w}));
-  XLSX.utils.book_append_sheet(wb, h1, 'Materiales');
-  const h2 = XLSX.utils.json_to_sheet(E.calc.productos.map(x => ({
+    'Falta por pendiente': redondear(r.faltaP), 'Falta por pronóstico': redondear(r.faltaF),
+    'Físico': r2(r.p.fisico||0), 'Compras en camino': r2(r.p.oc||0), 'En fabricación': r2(r.p.of_prod||0), 'Reservado OF': r2(r.p.of_consumo||0), 'Mínimo': r2(r.minimo) });
+  const anchos = [14,48,26,9,10,11,13,10,12,12,10,12,12,12,9];
+  // 1) Insumos a comprar
+  hoja(falta.filter(r => r.p.accion !== 'fabricar').sort((a,b)=>b.falta-a.falta).map(r => Object.assign(base(r), {
+    'OC en camino': (r.p.oc_docs||[]).map(d=>`${d.doc} ${d.quien||''} (${r2(d.cant)})`).join(' | '),
+    'Lo usan': r.origen.filter(o=>o.tipo!=='venta' && o.P+o.F>1e-9).map(o=>{ const x=E.calc.items.get(o.de); return x ? x.codigo||nom(x) : o.de; }).filter((v,i,a)=>a.indexOf(v)===i).join(', ') })),
+    'Insumos a comprar', anchos.concat([40,50]));
+  // 2) A fabricar
+  hoja(falta.filter(r => r.p.accion === 'fabricar').sort((a,b)=>b.falta-a.falta).map(r => Object.assign(base(r), {
+    'OF abiertas': (r.p.of_prod_docs||[]).map(d=>`${d.doc} (${r2(d.cant)})`).join(' | '), 'Tiene lista de materiales': r.p.bom && r.p.bom.length ? 'Sí' : 'NO' })),
+    'A fabricar', anchos.concat([30,12]));
+  // 3) Lista de materiales de lo que hay que fabricar (explosión)
+  const exp = [];
+  falta.filter(r => r.p.accion === 'fabricar').sort((a,b)=>b.falta-a.falta).forEach(r => (r.p.bom||[]).forEach(l => {
+    const c = E.calc.items.get(l.c) || {codigo:'', nombre:'Producto '+l.c, unidad:''}; const rc = E.calc.filasPorId.get(l.c);
+    exp.push({ 'Producto a fabricar': r.p.codigo, 'Descripción producto': nom(r.p), 'Cantidad a fabricar': redondear(r.falta),
+      'Componente': c.codigo, 'Descripción componente': nom(c), 'Unidad': c.unidad, 'Por unidad': r4(l.q),
+      'Necesario pendiente': r2(r.faltaP*l.q), 'Necesario pronóstico': r2(r.faltaF*l.q), 'Necesario total': r2(r.falta*l.q),
+      'Stock del componente': rc ? r2(rc.stock) : '', 'Falta del componente (total)': rc ? redondear(rc.falta) : '' });
+  }));
+  hoja(exp, 'Lista de materiales', [14,40,12,14,40,9,10,12,12,12,12,14]);
+  // 4) Todo el cálculo y 5) previsión
+  hoja(todas.slice().sort((a,b)=>a.p.accion.localeCompare(b.p.accion) || b.falta-a.falta).map(r => Object.assign({'Acción': r.p.accion==='fabricar'?'Fabricar':'Comprar'}, base(r))), 'Todo', [10].concat(anchos));
+  hoja(E.calc.productos.map(x => ({
     'Código': x.p.codigo, 'Producto': nom(x.p), 'Categoría': x.p.categoria, 'Unidad': x.p.unidad, 'Venta 12 meses': r2(x.p.venta_365||0),
     'Previsión automática': x.auto, 'Previsión 60 días': r2(x.prevision), 'Corregida por': x.aj ? (x.aj.usuario||'sí') : '',
-    'Pendiente': r2(x.pendiente), 'Pronóstico': r2(x.pronostico) })));
-  h2['!cols'] = [14,48,24,9,13,13,13,16,11,11].map(w=>({wch:w}));
-  XLSX.utils.book_append_sheet(wb, h2, 'Previsión');
-  XLSX.writeFile(wb, `Planificacion ${nombreCorto(emp.nombre)} ${fecha}.xlsx`);
+    'Pendiente': r2(x.pendiente), 'Pronóstico': r2(x.pronostico) })), 'Previsión', [14,48,24,9,13,13,13,16,11,11]);
+  XLSX.writeFile(wb, `Insumos ${nombreCorto(emp.nombre)} ${fecha}.xlsx`);
 }
 
 /* ───────── eventos ───────── */
@@ -471,6 +515,7 @@ let tBuscar; $('#buscar').addEventListener('input', () => { clearTimeout(tBuscar
     E.esAdmin = !!(acceso && acceso.es_admin);
     const [datos] = await Promise.all([bajarArchivo(), leerAjustes()]);
     E.datos = datos;
+    E.corregidos = normalizar(datos);
     if (!datos.empresas || !datos.empresas.length) throw new Error('El archivo de planificación no tiene empresas.');
     const pref = datos.empresas.find(e => /spotsline/i.test(e.nombre)) || datos.empresas[0];
     E.empresaId = pref.id;
